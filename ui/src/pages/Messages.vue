@@ -130,7 +130,7 @@ const receiptColumns: Column<Receipt>[] = [
     <UiCard :padded="false">
       <div @keydown="rows.onKeydown">
         <UiDataTable :items="list.items.value" :columns="columns" row-key="id" :row-attrs="rows.rowAttrs" :loading="list.loading.value" :total="list.total.value" :page="list.lq.page.value" :page-size="list.lq.pageSize.value" :sort="list.lq.sort.value" caption="SMS messages" empty-title="No messages match" clickable data-test="messages-table" @row-click="(m) => void open(m)" @update:page="list.lq.setPage" @update:page-size="list.lq.setPageSize" @update:sort="list.lq.setSort">
-          <template #cell-status="{ row }"><UiBadge :color="statusColor(row.status_code)">{{ statusLabel(row.status_code) }}</UiBadge></template>
+          <template #cell-status="{ row }"><UiBadge :color="statusColor(row.status_code)" :title="row.status_message">{{ statusLabel(row.status_code) }}</UiBadge></template>
         </UiDataTable>
       </div>
     </UiCard>
@@ -138,13 +138,20 @@ const receiptColumns: Column<Receipt>[] = [
     <UiDrawer :model-value="!!selected" :title="selected ? 'Message to ' + selected.recipient : ''" size="xl" data-test="message-drawer" @update:model-value="(v) => { if (!v) close() }">
       <div v-if="selected" class="flex flex-col gap-4">
         <UiAlert v-if="detailError" kind="error">{{ detailError }}</UiAlert>
-        <UiKeyValueTable :items="facts" :columns="2" />
+        <UiKeyValueTable :items="facts" :columns="2">
+          <template #value-2>
+            <UiBadge :color="statusColor(selected.status_code)" data-test="message-status">{{ statusLabel(selected.status_code) }} ({{ selected.status_code }})</UiBadge>
+            <span v-if="selected.status_message" class="ms-2 text-sm text-base-content/70">{{ humanize(selected.status_message) }}</span>
+          </template>
+        </UiKeyValueTable>
         <UiSection title="Text">
           <pre class="whitespace-pre-wrap break-words rounded bg-base-200 p-3 font-mono text-sm" data-test="message-text">{{ selected.text }}</pre>
         </UiSection>
         <UiSection title="Delivery receipts" data-test="message-receipts">
           <UiAlert v-if="receiptError" kind="error">{{ receiptError }}</UiAlert>
-          <UiDataTable v-else :items="receipts" :columns="receiptColumns" row-key="id" caption="Delivery receipts, oldest first" empty-title="No delivery receipts yet" />
+          <UiDataTable v-else :items="receipts" :columns="receiptColumns" row-key="id" caption="Delivery receipts, oldest first" empty-title="No delivery receipts yet">
+            <template #cell-status="{ row }"><UiBadge :color="statusColor(row.status)">{{ row.status }} · {{ statusLabel(row.status) }}</UiBadge></template>
+          </UiDataTable>
         </UiSection>
         <UiSection v-if="selected.data && Object.keys(selected.data).length" title="Send options and properties">
           <pre class="overflow-x-auto rounded bg-base-200 p-3 font-mono text-xs">{{ json(selected.data) }}</pre>

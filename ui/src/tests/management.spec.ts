@@ -7,7 +7,7 @@ import { call, explain, resolve } from '@/api/client'
 import { buildConfig, initialConfig, validateConfig } from '@/components/providerForm'
 import { apiClientSchema, blockSchema, sendSchema, templateSchema } from '@/components/schemas'
 import { bars, headline, percent, sparkPath } from '@/components/dashboard'
-import { statusLabel } from '@/components/format'
+import { statusColor, statusLabel } from '@/components/format'
 import { routes } from '@/routes'
 import { nav } from '@/nav'
 import type { ProviderField } from '@/api/types'
@@ -349,6 +349,12 @@ describe('templates and blocks', () => {
   })
 })
 
+describe('status colours', () => {
+  it('follow v3: delivered green, failed/rejected red, in flight blue, others orange', () => {
+    expect([1, 2, 16, -1, 0, 8, 500, 1003, 3].map(statusColor)).toEqual(['success', 'error', 'error', 'info', 'info', 'info', 'warning', 'warning', 'warning'])
+  })
+})
+
 describe('messages and dashboard', () => {
   it('filters on the server, opens details with receipt history', async () => {
     const receipt = { id: 1, status: 1, status_text: 'DELIVRD', channel: 'sms', sid: 9999, recipient: '359888123456', sender: 'SHOP', timestamp: 0, parts_received: 1, created_at: '2026-10-01T00:01:00Z', updated_at: '2026-10-01T00:01:00Z' }
@@ -383,6 +389,11 @@ describe('messages and dashboard', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]!.slice(0, 4)).toEqual([new Date(1759276800 * 1000).toLocaleString(), '8 · Delivered to SMSC', 'Sms sent', '2'])
     expect(rows[1]!.slice(0, 4)).toEqual([new Date('2026-10-01T00:01:00Z').toLocaleString(), '1 · Delivered', 'DELIVRD', '1'])
+    // Status colours as in v3.
+    const badges = [...document.querySelectorAll('[data-test="message-receipts"] tbody .badge')].map((b) => b.className)
+    expect(badges[0]).toContain('badge-info')
+    expect(badges[1]).toContain('badge-success')
+    expect(q('[data-test="message-status"]')?.className).toContain('badge-success')
     expect(q('[data-test="message-evidence-request"]')?.textContent).toContain('token=__set__')
     expectTenantSafe(calls)
     w.unmount()

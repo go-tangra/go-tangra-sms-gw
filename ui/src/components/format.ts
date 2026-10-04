@@ -20,10 +20,11 @@ export function statusLabel(code: number): string {
   return code >= 1000 ? 'Carrier error ' + code : 'Status ' + code
 }
 
+/** v3 colours: delivered green, failed/rejected red, in flight (≤0, 8) blue, anything else orange. */
 export function statusColor(code: number): 'success' | 'error' | 'info' | 'warning' {
   if (code === 1) return 'success'
-  if (code === 2 || code === 16 || code === 500 || code >= 1000) return 'error'
-  if (code === 0) return 'info'
+  if (code === 2 || code === 16) return 'error'
+  if (code <= 0 || code === 8) return 'info'
   return 'warning'
 }
 
