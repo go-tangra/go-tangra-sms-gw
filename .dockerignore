@@ -19,3 +19,5 @@ deploy/kek.dev
 tests/fixtures/legacy/source
 **/__pycache__
 **/*.pyc
+deploy/identity
+deploy/*.dev.key

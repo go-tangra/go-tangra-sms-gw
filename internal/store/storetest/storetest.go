@@ -32,6 +32,16 @@ type DB struct {
 // Repo returns the repository over the application role.
 func (d *DB) Repo() *repo.Postgres { return repo.NewPostgres(d.Store, 50, 500) }
 
+// Unavailable skips a test whose docker prerequisite is missing, or fails it
+// when SMSGW_TEST_REQUIRE_DOCKER is set (CI must not pass by skipping).
+func Unavailable(t testing.TB, format string, args ...any) {
+	t.Helper()
+	if os.Getenv("SMSGW_TEST_REQUIRE_DOCKER") != "" {
+		t.Fatalf(format, args...)
+	}
+	t.Skipf(format, args...)
+}
+
 // Start returns a fresh migrated database.
 func Start(t testing.TB) *DB {
 	t.Helper()
@@ -42,7 +52,7 @@ func Start(t testing.TB) *DB {
 			Image: "postgres:16", ExposedPorts: []string{"5432/tcp"}, Env: map[string]string{"POSTGRES_PASSWORD": "test"},
 			WaitingFor: wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(2 * time.Minute)}})
 		if err != nil {
-			t.Skipf("postgres unavailable (set SMSGW_TEST_PG_DSN or provide docker): %v", err)
+			Unavailable(t, "postgres unavailable (set SMSGW_TEST_PG_DSN or provide docker): %v", err)
 		}
 		t.Cleanup(func() { _ = testcontainers.TerminateContainer(c) })
 		host, _ := c.Host(ctx)

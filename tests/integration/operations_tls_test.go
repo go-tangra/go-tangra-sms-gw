@@ -30,6 +30,7 @@ import (
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/app"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/app/apptest"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/config"
+	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/store/storetest"
 )
 
 func freeAddr(t *testing.T) string {
@@ -220,7 +221,7 @@ func startPebble(t *testing.T, challengeAddr string, validity time.Duration) *pe
 		},
 		WaitingFor: wait.ForLog("ACME directory available").WithStartupTimeout(time.Minute)}})
 	if err != nil {
-		t.Skipf("pebble unavailable (docker): %v", err)
+		storetest.Unavailable(t, "pebble unavailable (docker): %v", err)
 	}
 	t.Cleanup(func() {
 		if t.Failed() {
