@@ -88,6 +88,10 @@ var descriptors = func() protoreflect.FileDescriptor {
 			message("PagingRequest", fieldDef{name: "page", json: "page", number: 1, kind: tInt32}, fieldDef{name: "page_size", json: "pageSize", number: 2, kind: tInt32},
 				fieldDef{name: "query", json: "query", number: 3, kind: tString}, fieldDef{name: "or_query", json: "or", number: 4, kind: tString},
 				fieldDef{name: "order_by", json: "orderBy", number: 5, kind: tString, repeated: true}, fieldDef{name: "no_paging", json: "nopaging", number: 6, kind: tBool}),
+			// The receipt query binds proto names only (dlr-camel-case-params).
+			message("DlrRequest", s("request_id", 1), s("channel", 2), fieldDef{name: "sid", json: "sid", number: 3, kind: tInt32},
+				fieldDef{name: "message_status", json: "message_status", number: 4, kind: tUint32}, fieldDef{name: "to", json: "to", number: 5, kind: tUint64},
+				s("from", 6), fieldDef{name: "timestamp", json: "timestamp", number: 7, kind: tUint64}),
 		}}, nil)
 	if err != nil {
 		panic(err)

@@ -41,7 +41,12 @@ func New(perMinute float64, burst, maxKeys int) *Limiter {
 }
 
 // Allow takes one token from key's bucket; an empty key shares one bucket.
-func (l *Limiter) Allow(key string) bool {
+func (l *Limiter) Allow(key string) bool { return l.take(key, 1) }
+
+// Available reports whether key's bucket holds a token without taking it.
+func (l *Limiter) Available(key string) bool { return l.take(key, 0) }
+
+func (l *Limiter) take(key string, n float64) bool {
 	if key == "" {
 		key = "_anon"
 	}
@@ -66,6 +71,6 @@ func (l *Limiter) Allow(key string) bool {
 	if b.tokens < 1 {
 		return false
 	}
-	b.tokens--
+	b.tokens -= n
 	return true
 }
