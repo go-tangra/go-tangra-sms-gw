@@ -114,6 +114,9 @@ func TestTransformPreservesAndMaps(t *testing.T) {
 			t.Errorf("unsupported data not reported: %s in %q", s, joined)
 		}
 	}
+	if strings.Contains(joined, `"voicecom"`) {
+		t.Errorf("voicecom is a registered provider type: %q", joined)
+	}
 }
 
 func TestTransformRequiresPlatformActorForAdminSends(t *testing.T) {

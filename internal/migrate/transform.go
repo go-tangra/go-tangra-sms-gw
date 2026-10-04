@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/provider"
+	_ "github.com/go-tangra/go-tangra-sms-gw/v4/internal/provider/voicecom" // secret fields and type checks of the carrier
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/sealed"
 )
 

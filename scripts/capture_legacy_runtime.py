@@ -10,6 +10,8 @@ in-process fake for failure modes. Nothing contacts a real carrier.
 
 Run: sg docker -c "python3 scripts/capture_legacy_runtime.py"
 Output: tests/fixtures/legacy/runtime/*.json (normalized, no secrets of value).
+With --snapshot PATH the fixtures stay untouched and the populated legacy
+database is dumped to PATH instead (migration rehearsal source).
 """
 import base64
 import concurrent.futures
@@ -943,6 +945,15 @@ class Capture:
 
 
 def main():
+    # --snapshot PATH: run the same scenario but, instead of rewriting the
+    # fixtures, pg_dump the populated legacy database to PATH (a throwaway
+    # legacy snapshot for the migration rehearsal; it holds capture-only
+    # credentials, keep it outside the repository).
+    snapshot = None
+    if len(sys.argv) == 3 and sys.argv[1] == '--snapshot':
+        snapshot = Path(sys.argv[2]).resolve()
+    elif len(sys.argv) != 1:
+        sys.exit('usage: capture_legacy_runtime.py [--snapshot PATH]')
     with tempfile.TemporaryDirectory(prefix='smsgw-legacy-runtime-') as temp:
         cap = Capture(Path(temp))
         try:
@@ -957,7 +968,12 @@ def main():
             cap.webhooks()
             cap.metrics()
             cap.restart_with_defaults()
-            cap.write()
+            if snapshot:
+                cap.stop_gateway()
+                snapshot.write_text(run(['docker', 'exec', PG, 'pg_dump', '-U', 'postgres', '--no-owner', '--no-privileges', 'sms_gw']))
+                print(f'legacy snapshot written to {snapshot}')
+            else:
+                cap.write()
         except Exception:
             for log in Path(temp).glob('gateway-*.log'):
                 sys.stderr.write(log.read_text()[-4000:])
