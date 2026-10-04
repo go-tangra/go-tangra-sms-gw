@@ -69,33 +69,73 @@ func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
 // Migrate applies the embedded migrations (migration role) under an advisory lock.
 func Migrate(ctx context.Context, dsn string) error {
+	_, _, err := MigrateVersion(ctx, dsn)
+	return err
+}
+
+// MigrateVersion is Migrate reporting how many migrations it applied and
+// the resulting schema version.
+func MigrateVersion(ctx context.Context, dsn string) (applied int, version int64, err error) {
 	cfg, err := pgx.ParseConfig(dsn)
 	if err != nil {
-		return errors.New("store: migrate: invalid dsn")
+		return 0, 0, errors.New("store: migrate: invalid dsn")
 	}
 	db := stdlib.OpenDB(*cfg)
 	defer db.Close()
 	conn, err := db.Conn(ctx)
 	if err != nil {
-		return fmt.Errorf("store: migrate: %w", err)
+		return 0, 0, fmt.Errorf("store: migrate: %w", err)
 	}
 	defer conn.Close()
 	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", migrateLock); err != nil {
-		return fmt.Errorf("store: migrate lock: %w", err)
+		return 0, 0, fmt.Errorf("store: migrate lock: %w", err)
 	}
 	defer func() { _, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", migrateLock) }()
 	files, err := fs.Sub(migrations, "migrations")
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	p, err := goose.NewProvider(goose.DialectPostgres, db, files)
 	if err != nil {
-		return fmt.Errorf("store: migrate: %w", err)
+		return 0, 0, fmt.Errorf("store: migrate: %w", err)
 	}
-	if _, err := p.Up(ctx); err != nil {
-		return fmt.Errorf("store: migrate: %w", err)
+	res, err := p.Up(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("store: migrate: %w", err)
+	}
+	if version, err = p.GetDBVersion(ctx); err != nil {
+		return 0, 0, fmt.Errorf("store: migrate: %w", err)
+	}
+	return len(res), version, nil
+}
+
+// GrantApp gives the application role its rights on the current schema
+// (idempotent; with the migration role). Migrations grant smsgw_app only
+// when it exists at that time; deployments with another role name or a
+// role created later run this from bootstrap. Audit stays append-only.
+func GrantApp(ctx context.Context, migrateDSN, role string) error {
+	conn, err := pgx.Connect(ctx, migrateDSN)
+	if err != nil {
+		return fmt.Errorf("store: grant: %w", err)
+	}
+	defer conn.Close(context.Background())
+	r := pgx.Identifier{role}.Sanitize()
+	for _, q := range []string{"GRANT USAGE ON SCHEMA public TO " + r,
+		"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO " + r,
+		"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO " + r,
+		"REVOKE UPDATE, DELETE ON sms_audit FROM " + r} {
+		if _, err := conn.Exec(ctx, q); err != nil {
+			return fmt.Errorf("store: grant: %w", err)
+		}
 	}
 	return nil
+}
+
+// Role reports the connected role and whether it bypasses row-level
+// security (superuser or BYPASSRLS): the application role must not.
+func (s *Store) Role(ctx context.Context) (name string, bypassRLS bool, err error) {
+	err = s.pool.QueryRow(ctx, "SELECT rolname, rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user").Scan(&name, &bypassRLS)
+	return
 }
 
 // Scope selects the row-level security settings of a transaction.

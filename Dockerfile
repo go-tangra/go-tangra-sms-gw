@@ -32,8 +32,10 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 COPY --from=ui /src/ui/dist ./ui/dist
+ARG APP_VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    go build -trimpath -tags ui -ldflags "-s -w" -o /out/smsgwsvc ./cmd/smsgwsvc
+    go build -trimpath -tags ui -ldflags "-s -w -X main.version=${APP_VERSION}" -o /out/smsgwsvc ./cmd/smsgwsvc && \
+    go build -trimpath -ldflags "-s -w" -o /out/smsgw-migrate ./cmd/smsgw-migrate
 
 FROM gcr.io/distroless/static-debian12:nonroot
 ARG APP_VERSION=dev
@@ -42,7 +44,7 @@ LABEL org.opencontainers.image.source="https://github.com/go-tangra/go-tangra-sm
       org.opencontainers.image.title="go-tangra-sms-gw" \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.revision="${VCS_REF}"
-COPY --from=build /out/smsgwsvc /usr/local/bin/smsgwsvc
+COPY --from=build /out/smsgwsvc /out/smsgw-migrate /usr/local/bin/
 # Development defaults only; deployments mount their own configuration and
 # secrets (the dev key files are not part of the image).
 COPY deploy/dev.yaml deploy/policy.yaml /app/deploy/

@@ -1,5 +1,7 @@
 // Command smsgwsvc runs the sms-gw module: the V4 management API on the
-// mesh and the legacy Hermes edge on its own listener.
+// mesh and the legacy Hermes edge on its own listener. `smsgwsvc bootstrap
+// -config <file>` prepares the database and checks the deployment secrets;
+// `smsgwsvc version` prints the build version.
 package main
 
 import (
@@ -16,7 +18,12 @@ import (
 	"github.com/go-tangra/go-tangra-sms-gw/v4/ui"
 )
 
-func main() { os.Exit(run(os.Args[1:])) }
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "bootstrap" {
+		os.Exit(bootstrap(os.Args[2:]))
+	}
+	os.Exit(run(os.Args[1:]))
+}
 
 func run(args []string) int {
 	fs := flag.NewFlagSet("smsgwsvc", flag.ContinueOnError)
