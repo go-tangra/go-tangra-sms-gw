@@ -23,7 +23,7 @@ var sendOutcomes = set("ok", "forbidden", "validation_error", "block_check_error
 var (
 	webhookOutcomes = set("delivered", "failed", "dropped")
 	loginOutcomes   = set("success", "invalid_credentials", "disabled", "bad_request", "rate_limited", "error")
-	runOutcomes     = set("ok", "error")
+	runOutcomes     = set("ok", "partial", "error")
 	rejectReasons   = set("bad_token", "unknown_message", "malformed", "rate_limited", "unavailable")
 	providerTypeRE  = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
 	// Receipt codes of the Voicecom status table; anything else is "other".

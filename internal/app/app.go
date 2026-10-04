@@ -36,6 +36,7 @@ import (
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/authz"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/config"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/dlr"
+	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/housekeeper"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/httpapi"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/metrics"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/provider"
@@ -89,6 +90,8 @@ type App struct {
 	// Carrier receipts and client callbacks (dlr.go).
 	Receipts  *dlr.Processor
 	Callbacks *webhook.Dispatcher
+	// Housekeeper enforces provider retention (workers.go).
+	Housekeeper *housekeeper.Housekeeper
 
 	// PublicCerts is the ACME manager of the public HTTPS listener (nil
 	// without ACME); never the mesh identity.
@@ -205,7 +208,7 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 		writeJSON(w, http.StatusNotFound, map[string]string{"reason": "not_found"})
 	})
 	a.Freya.HTTP().HandlePrefix("/", a.Management)
-	a.Go(a.purgeRevocations)
+	a.buildWorkers()
 	if err := a.buildAdmin(); err != nil {
 		return nil, err
 	}
@@ -367,18 +370,6 @@ func (a *App) shutdownServers() {
 		}
 		if s.lis != nil {
 			_ = s.lis.Close()
-		}
-	}
-}
-
-// purgeRevocations drops expired Hermes token revocations hourly.
-func (a *App) purgeRevocations(ctx context.Context) {
-	for {
-		if _, err := a.Repo.PurgeRevocations(ctx, time.Now()); err != nil && ctx.Err() == nil {
-			a.Log.Warn("revocation purge failed; retrying next hour")
-		}
-		if !pause(ctx, time.Hour) {
-			return
 		}
 	}
 }
