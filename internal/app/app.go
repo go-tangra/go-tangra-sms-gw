@@ -38,10 +38,10 @@ import (
 type Options struct {
 	Logger   slog.Handler
 	Freya    []freya.Option
-	KEK      []byte          // nil = from config
-	Verifier authz.Verifier  // nil = authclient over the pooled auth connection
-	Checker  authz.Checker   // nil = auth.v1.Authorization/Check, cached
-	Migrate  bool            // apply migrations with db.migrate_dsn first
+	KEK      []byte           // nil = from config
+	Verifier authz.Verifier   // nil = authclient over the pooled auth connection
+	Checker  authz.Checker    // nil = auth.v1.Authorization/Check, cached
+	Migrate  bool             // apply migrations with db.migrate_dsn first
 	Register func(*App) error // mounts later stories after the core is wired
 }
 
