@@ -1,6 +1,6 @@
 # Quickstart validation: SMS Gateway V4
 
-This is a guide for the future implementation. Commands below are acceptance targets, not runnable service commands in the current documentation-only workspace.
+Acceptance commands for the implemented module. Every command below runs in this repository; actual results are recorded in [docs/validation.md](../../docs/validation.md).
 
 ## Prerequisites
 
@@ -8,7 +8,7 @@ Go 1.26/toolchain 1.26.8, Node 22, Docker Compose, and access to the local V4 au
 
 ## Build and local startup
 
-After tasks create these targets/files, from repository root:
+From the repository root:
 
 ```bash
 make generate
@@ -20,7 +20,7 @@ go run ./cmd/smsgwsvc bootstrap -config deploy/dev.yaml
 go run -tags ui ./cmd/smsgwsvc -config deploy/dev.yaml
 ```
 
-`deploy/compose.yaml` supplies PostgreSQL and a mock LinkMobility carrier and supports connecting to V4 auth/portal/LCM using explicit sibling path/configuration variables. `deploy/dev.yaml` supplies public :9901 and optional HTTPS :9443, distinct mesh/admin addresses, development identity/secret paths and monitoring configuration. Bootstrap applies idempotent migrations only; no sample credentials or real sends are created without an explicit fixture command.
+`deploy/compose.yaml` supplies PostgreSQL and a mock LinkMobility carrier and supports connecting to V4 auth/portal/LCM using explicit sibling path/configuration variables. `deploy/dev.yaml` supplies public :9901 and optional HTTPS :9902, distinct mesh/admin addresses, development identity/secret paths and monitoring configuration. Bootstrap applies idempotent migrations only; no sample credentials or real sends are created without an explicit fixture command.
 
 ## Public compatibility (US1, FR-001–005)
 
@@ -46,11 +46,11 @@ npm run build
 npm run test:e2e
 ```
 
-Register module and auth permissions/roles. Sign in as administrator, sender and viewer in two tenants. Load all seven management areas through the V4 portal, exercise permissions both through UI and direct mesh endpoint, and verify tenant isolation, secret redaction, filters, preview/parts counts and unavailable monitoring. Manifest, remote exports, OpenAPI and handlers agree; public listener cannot reach management. Use development certificates for direct mesh tests; no insecure mesh opt-out.
+Register module and auth permissions/roles. Sign in as administrator, sender, viewer and monitoring in two tenants (the dashboard needs the monitoring role; viewer is refused). Load all seven management areas through the V4 portal, exercise permissions both through UI and direct mesh endpoint, and verify tenant isolation, secret redaction, filters, preview/parts counts and unavailable monitoring. Manifest, remote exports, OpenAPI and handlers agree; public listener cannot reach management. Use development certificates for direct mesh tests; no insecure mesh opt-out.
 
 ## Migration and operation (US4, FR-013–016)
 
-Implementation supplies the following migration CLI flags:
+The migration command:
 
 ```bash
 go run ./cmd/smsgw-migrate -source-config deploy/legacy-import.dev.yaml -config deploy/dev.yaml -tenant fixture-tenant -dry-run
@@ -62,3 +62,11 @@ Source config points to a read-only snapshot connection; secrets are references,
 Restart services; rotate/expire internal identity; interrupt auth/portal and restore them; confirm registration recovers, protected traffic fails closed as required and clean shutdown drains workers. Test public static TLS and local ACME issuance/renewal/cache persistence and nonfatal invalid-public-cert cases. Run retention twice, including zero retention and foreign-tenant/provider controls.
 
 Follow `docs/migration.md` for a paused-send final snapshot/cutover and rollback rehearsal. After destination accepts new traffic, reconcile new messages and receipt routing before rollback; changing routing alone is insufficient. Record fixture counts, platform versions and command results in `docs/validation.md`. Production rollout remains a later step.
+
+## Platform acceptance (FR-001–017, SC-001–006)
+
+```bash
+make test-integration   # includes tests/integration/platform_test.go
+```
+
+`TestPlatformAcceptance` runs the whole module against gateway and auth services speaking the real V4 gRPC contracts over mTLS (fakes, so it runs in CI) with the mock carrier; the same flow through the real portal is the freya-stack run recorded in docs/validation.md.
