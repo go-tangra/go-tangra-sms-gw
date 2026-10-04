@@ -209,6 +209,29 @@ func TestReceiptsAggregateAtomically(t *testing.T) {
 	}
 }
 
+// A duplicate receipt increments in place: the next new status gets the
+// next id, as in the source (receipt ids are public).
+func TestReceiptIDsStayDense(t *testing.T) {
+	f := seed(t)
+	ctx := context.Background()
+	m := f.message(t, tenantA, f.provA.ID, nil, repo.ClientActor(f.clientA.ID), "359888000021")
+	var ids []int64
+	for _, status := range []uint32{8, 8, 8, 1} {
+		d, err := f.r.AddReceipt(ctx, repo.Receipt{TenantID: tenantA, MessageID: m.ID, MessageStatus: status, Timestamp: int64(status)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, d.ID)
+	}
+	if ids[0] != ids[1] || ids[1] != ids[2] || ids[3] != ids[0]+1 {
+		t.Fatalf("receipt ids %v", ids)
+	}
+	l, _ := f.r.ListReceipts(ctx, repo.TenantView(tenantA), m.ID)
+	if l.Total != 2 || l.Items[0].PartsReceived != 3 || l.Items[0].Timestamp != 8 {
+		t.Fatalf("receipts %+v", l.Items)
+	}
+}
+
 func TestTerminalStatusIsKept(t *testing.T) {
 	f := seed(t)
 	ctx := context.Background()
