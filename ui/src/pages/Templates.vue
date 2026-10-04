@@ -7,6 +7,7 @@ import { call, errorField, explain } from '@/api/client'
 import { CHANNELS, ENCODINGS, type Encoding, type Preview, type Template } from '@/api/types'
 import { debounce, usePagedList } from '@/components/lists'
 import { useRowActivation } from '@/components/rows'
+import { askOverDrawer, supplied } from '@/components/confirm'
 import { when } from '@/components/format'
 import { templateSchema } from '@/components/schemas'
 import PreviewResult from '@/components/PreviewResult.vue'
@@ -71,7 +72,7 @@ async function runPreview(): Promise<void> {
   previewing.value = true
   previewError.value = ''
   try {
-    preview.value = await call<Preview>('POST', '/api/sms-gw/v1/templates/{template_id}/preview', { params: { template_id: t.id }, body: { properties: { ...properties }, encoding: encoding.value } })
+    preview.value = await call<Preview>('POST', '/api/sms-gw/v1/templates/{template_id}/preview', { params: { template_id: t.id }, body: { properties: supplied(properties), encoding: encoding.value } })
   } catch (e) {
     preview.value = null
     previewError.value = explain(e)
@@ -81,13 +82,14 @@ async function runPreview(): Promise<void> {
 }
 async function remove(): Promise<void> {
   const t = selected.value
-  if (!t || !(await confirm.ask({ title: `Delete ${t.name}?`, text: 'Templates referenced by messages cannot be deleted; disable them instead.', danger: true, confirmLabel: 'Delete' }))) return
+  if (!t || !(await askOverDrawer(confirm, drawer, { title: `Delete ${t.name}?`, text: 'Templates referenced by messages cannot be deleted; disable them instead.', danger: true, confirmLabel: 'Delete' }))) return
   try {
     await call('DELETE', '/api/sms-gw/v1/templates/{template_id}', { params: { template_id: t.id } })
     drawer.value = false
     void list.load()
   } catch (e) {
     formError.value = explain(e)
+    drawer.value = true
   }
 }
 const unsaved = computed(() => !!selected.value && form.dirty.value)

@@ -7,6 +7,7 @@ import { call, errorField, explain } from '@/api/client'
 import { CHANNELS, type Block, type Provider } from '@/api/types'
 import { debounce, loadOptions, usePagedList } from '@/components/lists'
 import { useRowActivation } from '@/components/rows'
+import { askOverDrawer } from '@/components/confirm'
 import { when } from '@/components/format'
 import { blockSchema } from '@/components/schemas'
 
@@ -60,13 +61,14 @@ function open(b: Block | null): void {
 }
 async function remove(): Promise<void> {
   const b = selected.value
-  if (!b || !(await confirm.ask({ title: `Unblock ${b.recipient}?`, text: 'Messages to this recipient will be sent again.', danger: true, confirmLabel: 'Delete block' }))) return
+  if (!b || !(await askOverDrawer(confirm, drawer, { title: `Unblock ${b.recipient}?`, text: 'Messages to this recipient will be sent again.', danger: true, confirmLabel: 'Delete block' }))) return
   try {
     await call('DELETE', '/api/sms-gw/v1/blocks/{block_id}', { params: { block_id: b.id } })
     drawer.value = false
     void list.load()
   } catch (e) {
     formError.value = explain(e)
+    drawer.value = true
   }
 }
 const rows = useRowActivation<Block>((b) => String(b.id), (b) => 'Open block for ' + b.recipient, () => list.items.value, open, 'block')

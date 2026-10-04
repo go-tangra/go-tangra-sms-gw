@@ -7,6 +7,7 @@ import { call, errorField, explain } from '@/api/client'
 import { SET_MARKER, type ApiClient, type ApiClientCreated, type PasswordResetResult } from '@/api/types'
 import { debounce, usePagedList } from '@/components/lists'
 import { useRowActivation } from '@/components/rows'
+import { askOverDrawer } from '@/components/confirm'
 import { when } from '@/components/format'
 import { apiClientSchema, passwordResetSchema } from '@/components/schemas'
 import OneTimeSecret from '@/components/OneTimeSecret.vue'
@@ -75,13 +76,14 @@ function open(c: ApiClient | null): void {
 
 async function remove(): Promise<void> {
   const c = selected.value
-  if (!c || !(await confirm.ask({ title: `Delete ${c.username}?`, text: 'Clients that have sent messages cannot be deleted; disable them instead.', danger: true, confirmLabel: 'Delete' }))) return
+  if (!c || !(await askOverDrawer(confirm, drawer, { title: `Delete ${c.username}?`, text: 'Clients that have sent messages cannot be deleted; disable them instead.', danger: true, confirmLabel: 'Delete' }))) return
   try {
     await call('DELETE', '/api/sms-gw/v1/api-clients/{client_id}', { params: { client_id: c.id } })
     drawer.value = false
     void list.load()
   } catch (e) {
     formError.value = explain(e)
+    drawer.value = true
   }
 }
 

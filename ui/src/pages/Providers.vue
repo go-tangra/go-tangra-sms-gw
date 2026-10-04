@@ -6,6 +6,7 @@ import { call, errorField, explain } from '@/api/client'
 import { CHANNELS, SET_MARKER, type Channel, type Provider, type ProviderCreated, type ProviderField, type ProviderType } from '@/api/types'
 import { debounce, usePagedList } from '@/components/lists'
 import { useRowActivation } from '@/components/rows'
+import { askOverDrawer } from '@/components/confirm'
 import { when } from '@/components/format'
 import { buildConfig, initialConfig, validateConfig } from '@/components/providerForm'
 import OneTimeSecret from '@/components/OneTimeSecret.vue'
@@ -90,13 +91,14 @@ async function save(): Promise<void> {
 }
 async function remove(): Promise<void> {
   const p = selected.value
-  if (!p || !(await confirm.ask({ title: `Delete ${p.name}?`, text: 'Providers referenced by messages or blocks cannot be deleted.', danger: true, confirmLabel: 'Delete' }))) return
+  if (!p || !(await askOverDrawer(confirm, drawer, { title: `Delete ${p.name}?`, text: 'Providers referenced by messages or blocks cannot be deleted.', danger: true, confirmLabel: 'Delete' }))) return
   try {
     await call('DELETE', '/api/sms-gw/v1/providers/{provider_id}', { params: { provider_id: p.id } })
     drawer.value = false
     void list.load()
   } catch (e) {
     formError.value = explain(e)
+    drawer.value = true
   }
 }
 const err = (k: string) => errors.value[k]
