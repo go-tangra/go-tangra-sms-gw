@@ -121,3 +121,66 @@ func TestRemoteHandler(t *testing.T) {
 		t.Fatal(w.Header())
 	}
 }
+
+type roleChecker []string
+
+func (roleChecker) Verify(context.Context, string) (authclient.Identity, error) {
+	return authclient.Identity{UserID: "u1", TenantID: "6b1d2a9e-3f00-4c1a-9d2e-0000000000aa"}, nil
+}
+func (r roleChecker) Has(_ context.Context, _, _, perm string) (bool, error) {
+	for _, p := range r {
+		if p == perm {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// TestRoleMatrix: every module role is refused (403) on every route whose
+// permission it lacks; the dashboard (deployment-wide totals) is reachable
+// only with dashboard:read, which viewer does not hold and monitoring holds
+// alone.
+func TestRoleMatrix(t *testing.T) {
+	man, err := smsgwmanifest.Manifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	param := strings.NewReplacer("{provider_id}", "1", "{template_id}", "1", "{client_id}", "1", "{block_id}", "1", "{message_id}", "1")
+	dashboard := map[string]bool{}
+	for _, role := range smsgwmanifest.Roles {
+		s, err := New(Config{Authz: authz.New(allowAll{}, roleChecker(role.Permissions))})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range man.Routes {
+			allowed := false
+			for _, p := range role.Permissions {
+				allowed = allowed || p == r.Permission
+			}
+			if allowed && r.Permission != authz.DashboardRead {
+				continue
+			}
+			req := httptest.NewRequest(r.Method, param.Replace(r.Path), strings.NewReader(`{"window":"1h"}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer ok")
+			w := httptest.NewRecorder()
+			s.ServeHTTP(w, req)
+			switch {
+			case !allowed && (w.Code != 403 || !strings.Contains(w.Body.String(), "forbidden")):
+				t.Errorf("%s %s %s: %d %s", role.Slug, r.Method, r.Path, w.Code, w.Body)
+			case allowed && w.Code != 200:
+				t.Errorf("%s %s %s: %d %s", role.Slug, r.Method, r.Path, w.Code, w.Body)
+			case allowed:
+				dashboard[role.Slug] = true
+			}
+		}
+	}
+	if len(dashboard) != 2 || !dashboard["administrator"] || !dashboard["monitoring"] {
+		t.Fatalf("dashboard reachable by %v", dashboard)
+	}
+	for _, role := range smsgwmanifest.Roles {
+		if role.Slug == "monitoring" && (len(role.Permissions) != 1 || role.Permissions[0] != authz.DashboardRead) {
+			t.Fatalf("monitoring %v", role.Permissions)
+		}
+	}
+}

@@ -23,7 +23,7 @@ export function stubFetch(handler: (url: string, method: string, body: unknown) 
 }
 
 // The CASL rules the gateway derives from pkg/smsgwmanifest Abilities for
-// the module roles (administrator, sender, viewer).
+// the module roles (administrator, sender, viewer, monitoring).
 const abilities: Array<{ action: string[]; subject: string; requires: string }> = [
   { action: ['read'], subject: 'SmsProvider', requires: 'providers:read' },
   { action: ['create', 'update', 'delete'], subject: 'SmsProvider', requires: 'providers:manage' },
@@ -40,7 +40,8 @@ const abilities: Array<{ action: string[]; subject: string; requires: string }> 
 export const roles: Record<string, string[]> = {
   administrator: [...new Set(abilities.map((a) => a.requires))],
   sender: ['providers:read', 'templates:read', 'messages:send', 'messages:read'],
-  viewer: ['providers:read', 'templates:read', 'messages:read', 'dashboard:read'],
+  viewer: ['providers:read', 'templates:read', 'messages:read'],
+  monitoring: ['dashboard:read'],
 }
 export function rulesFor(perms: string[]) {
   return abilities.filter((a) => perms.includes(a.requires)).map((a) => ({ action: a.action, subject: a.subject }))

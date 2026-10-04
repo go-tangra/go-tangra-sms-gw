@@ -59,6 +59,13 @@ describe('federation exports', () => {
     expect(new Set(routes.map((r) => r.name)).size).toBe(routes.length)
     expect(nav()).toEqual([])
   })
+  it('shows the dashboard only with dashboard:read: never to a viewer, alone to monitoring', () => {
+    const visible = (r: string) => routes.filter((x) => roles[r]!.includes(x.meta?.requires as string)).map((x) => x.name)
+    expect(visible('administrator')).toContain('sms-gw-dashboard')
+    expect(visible('viewer')).not.toContain('sms-gw-dashboard')
+    expect(visible('sender')).not.toContain('sms-gw-dashboard')
+    expect(visible('monitoring')).toEqual(['sms-gw-dashboard'])
+  })
 })
 
 describe('api client', () => {
@@ -406,7 +413,7 @@ describe('messages and dashboard', () => {
       if (url.endsWith('/instant')) return { status: 200, body: { available: true, window: '24h', results: { success_rate: [{ labels: {}, value: 0.5, has_value: true }], send_by_outcome: [{ labels: { outcome: 'ok' }, value: 4, has_value: true }] } } }
       return { status: 200, body: { available: true, window: '24h', results: { send_latency_p95: [{ labels: {}, timestamps: [1, 2], values: [0.2, 0.4] }] } } }
     })
-    const w = mountPage(Dashboard, roles.viewer)
+    const w = mountPage(Dashboard, roles.monitoring)
     await flushPromises()
     expect(q('[data-test="dashboard-unavailable"]')?.textContent).toContain('unreachable')
     expect(calls[0]?.body).toEqual({ window: '1h' })

@@ -669,6 +669,7 @@ paths:
   /api/sms-gw/v1/dashboard/instant:
     post:
       operationId: dashboardInstant
+      description: 'Deployment-wide totals: the metrics carry no tenant, so results include every tenant''s volumes (no records or identifiers). Requires dashboard:read, held only by the monitoring and administrator module roles and the owner/admin built-in grants, never by viewer.'
       x-freya-permission: dashboard:read
       x-freya-timeout-seconds: 30
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DashboardQuery' } } } }
@@ -678,6 +679,7 @@ paths:
   /api/sms-gw/v1/dashboard/range:
     post:
       operationId: dashboardRange
+      description: 'Deployment-wide totals across all tenants, like dashboardInstant. Requires dashboard:read (monitoring role).'
       x-freya-permission: dashboard:read
       x-freya-timeout-seconds: 30
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DashboardQuery' } } } }

@@ -36,11 +36,21 @@ var operators = map[string]struct {
 	tenant, user string
 	perms        []string
 }{
-	"admin-a":  {mgmtTenantA, "11111111-0000-4000-8000-00000000000a", smsgwmanifest.PermissionRefs()},
-	"sender-a": {mgmtTenantA, "22222222-0000-4000-8000-00000000000a", smsgwmanifest.Roles[1].Permissions},
-	"viewer-a": {mgmtTenantA, "33333333-0000-4000-8000-00000000000a", smsgwmanifest.Roles[2].Permissions},
-	"admin-b":  {mgmtTenantB, "11111111-0000-4000-8000-00000000000b", smsgwmanifest.PermissionRefs()},
-	"flaky-a":  {mgmtTenantA, "flaky", smsgwmanifest.PermissionRefs()},
+	"admin-a":   {mgmtTenantA, "11111111-0000-4000-8000-00000000000a", smsgwmanifest.PermissionRefs()},
+	"sender-a":  {mgmtTenantA, "22222222-0000-4000-8000-00000000000a", rolePerms("sender")},
+	"viewer-a":  {mgmtTenantA, "33333333-0000-4000-8000-00000000000a", rolePerms("viewer")},
+	"monitor-a": {mgmtTenantA, "44444444-0000-4000-8000-00000000000a", rolePerms("monitoring")},
+	"admin-b":   {mgmtTenantB, "11111111-0000-4000-8000-00000000000b", smsgwmanifest.PermissionRefs()},
+	"flaky-a":   {mgmtTenantA, "flaky", smsgwmanifest.PermissionRefs()},
+}
+
+func rolePerms(slug string) []string {
+	for _, r := range smsgwmanifest.Roles {
+		if r.Slug == slug {
+			return r.Permissions
+		}
+	}
+	panic("no module role " + slug)
 }
 
 type fakeAuth struct{}
@@ -375,15 +385,23 @@ func TestManagementRolesTenantsAndSecrets(t *testing.T) {
 		t.Fatalf("deleted client logged in: %d", code)
 	}
 
-	// Dashboard without monitoring reports it as unavailable.
-	r = m.do("POST", "/dashboard/instant", "viewer-a", map[string]any{"window": "1h"})
+	// The dashboard (deployment-wide totals) needs the monitoring role;
+	// without monitoring configured it reports itself unavailable.
+	r = m.do("POST", "/dashboard/instant", "monitor-a", map[string]any{"window": "1h"})
 	m.expect(r, 200, "")
 	if v := r.json(t); v["available"] != false || v["reason"] != "not_configured" {
 		t.Fatalf("%v", v)
 	}
+	m.expect(m.do("POST", "/dashboard/instant", "admin-a", map[string]any{"window": "1h"}), 200, "")
 	m.expect(m.do("POST", "/dashboard/range", "sender-a", map[string]any{"window": "1h"}), 403, "forbidden")
-	m.expect(m.do("POST", "/dashboard/range", "viewer-a", map[string]any{"window": "30d"}), 400, "validation_failed")
-	m.expect(m.do("POST", "/dashboard/instant", "viewer-a", map[string]any{"window": "1h", "queries": []string{"up"}}), 400, "validation_failed")
+	m.expect(m.do("POST", "/dashboard/instant", "viewer-a", map[string]any{"window": "1h"}), 403, "forbidden")
+	m.expect(m.do("POST", "/dashboard/range", "viewer-a", map[string]any{"window": "1h"}), 403, "forbidden")
+	m.expect(m.do("POST", "/dashboard/range", "monitor-a", map[string]any{"window": "30d"}), 400, "validation_failed")
+	m.expect(m.do("POST", "/dashboard/instant", "monitor-a", map[string]any{"window": "1h", "queries": []string{"up"}}), 400, "validation_failed")
+	// Monitoring grants nothing else.
+	for _, p := range []string{"/providers", "/templates", "/api-clients", "/blocks", "/messages"} {
+		m.expect(m.do("GET", p, "monitor-a", nil), 403, "forbidden")
+	}
 }
 
 func mustInt(s string) int64 {

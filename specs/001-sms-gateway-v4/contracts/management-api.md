@@ -18,7 +18,7 @@ Module `sms-gw`; exclusive registered prefix `/api/sms-gw`; versioned routes `/a
 | /messages | GET searchable list; POST manual send | messages:read; messages:send |
 | /messages/{id} | GET details | messages:read |
 | /messages/{id}/dlrs | GET receipt history | messages:read |
-| /dashboard/instant; /dashboard/range | POST constrained monitoring query | dashboard:read |
+| /dashboard/instant; /dashboard/range | POST constrained monitoring query (deployment-wide totals across tenants) | dashboard:read |
 
 Requests cannot set tenant or actor. Manual send uses the same domain validation/carrier pipeline as public send but records the verified platform actor separately. List queries include bounded page/pageSize, documented sorting and resource filters; messages support recipient prefix, SID and API client username. Mutation schemas reject unknown security-sensitive fields, validate registered provider/channel type, immutable username and cross-tenant references. Preview computes the same rendering/encoding/parts rules used on send and never submits to a carrier.
 
@@ -28,4 +28,4 @@ Responses: list `{items,total}`, detail DTOs as declared by OpenAPI, creates 201
 
 Dashboard only permits the existing module metric queries/windows (15m through 7d), bounds range/step/timeouts and never proxies arbitrary user-supplied PromQL. Missing monitoring returns an explicit unavailable result without affecting SMS endpoints.
 
-Module roles: administrator receives all listed permissions; sender receives providers:read, templates:read, messages:send and messages:read; viewer receives providers:read, templates:read, messages:read and dashboard:read. Built-in owner/admin grants receive all permissions; no broad member grant by default. These roles are registered with auth, replacing legacy platform:admin/sms:admin string checks. Every operation checks its permission server-side and scopes all data to identity tenant.
+Module roles: administrator receives all listed permissions; sender receives providers:read, templates:read, messages:send and messages:read; viewer receives providers:read, templates:read and messages:read; monitoring receives only dashboard:read. The dashboard aggregates metrics that carry no tenant label, so it exposes deployment-wide totals across tenants (no records or identifiers); it is therefore a role of its own and never part of ordinary viewing. Built-in owner/admin grants receive all permissions; no broad member grant by default. These roles are registered with auth, replacing legacy platform:admin/sms:admin string checks. Every operation checks its permission server-side and scopes all data to identity tenant.

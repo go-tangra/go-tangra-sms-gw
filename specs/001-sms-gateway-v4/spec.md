@@ -35,7 +35,7 @@ A consumer receives accurate delivery state through polling or its configured si
 
 ### User Story 3 - Administer the gateway from Tangra V4 (Priority: P1)
 
-A platform operator opens the gateway in the V4 portal and manages providers, templates, API clients and blocks, searches messages, inspects receipts, sends manually and views the dashboard according to assigned permissions.
+A platform operator opens the gateway in the V4 portal and manages providers, templates, API clients and blocks, searches messages, inspects receipts, sends manually and views the dashboard according to assigned permissions (the dashboard shows deployment-wide totals and needs its own monitoring permission, not ordinary viewing).
 
 **Why this priority**: V4 compatibility requires usable, authorized administration inside the platform.
 **Independent Test**: With seeded data and V4 identities for administrator, sender and viewer, register the module, navigate all pages and exercise each allowed and denied action through the portal and directly against the protected service.
@@ -83,7 +83,7 @@ An operator imports existing gateway data into a V4 deployment, verifies compati
 - **FR-006**: Record message identity, owner, provider/template references, carrier SID, timestamps and delivery state; preserve initial, intermediate and terminal status semantics and prevent late receipts from replacing terminal outcomes.
 - **FR-007**: Authenticate carrier receipts using the stored receipt secret/token, aggregate repeated message/status callbacks atomically, preserve parts counts and audit history, and retain the source's `200 DLR_OK` acknowledgement even when a receipt is rejected.
 - **FR-008**: Preserve per-client outbound receipt callbacks, signature and payload conventions, destination safety checks and bounded asynchronous dispatch; failed push MUST NOT prevent polling or receipt ingestion.
-- **FR-009**: Register management operations, permissions, roles, navigation and UI assets with Tangra V4; verify operator identity and permissions at the service as well as at the portal, without trusting legacy role headers.
+- **FR-009**: Register management operations, permissions, roles, navigation and UI assets with Tangra V4; verify operator identity and permissions at the service as well as at the portal, without trusting legacy role headers. Module roles are administrator, sender, viewer and monitoring; the dashboard's deployment-wide totals require `dashboard:read`, granted by monitoring (and administrator) but never by viewer.
 - **FR-010**: Provide provider/template/client/block CRUD, password reset, provider-type discovery, message/receipt inspection, filters, manual send and existing dashboard windows through the V4 portal.
 - **FR-011**: Scope all management data to the verified tenant; bind every public API client to one tenant at creation/import and derive public request tenant from that client. No caller-supplied tenant override may cross the boundary.
 - **FR-012**: Protect secrets from responses, logs, audit and UI; preserve existing password hashes during migration and record operational/security events without message bodies or token material.
@@ -109,7 +109,7 @@ An operator imports existing gateway data into a V4 deployment, verifies compati
 ### Measurable Outcomes
 
 - **SC-001**: 100% of captured legacy public-operation scenarios retain their methods, paths, payload semantics, token/error conventions and visible outcomes, except documented secret redaction and tenant isolation.
-- **SC-002**: 100% of negative authorization scenarios deny viewer writes, foreign-client reads, foreign-tenant access and forged receipt state changes.
+- **SC-002**: 100% of negative authorization scenarios deny viewer writes, viewer dashboard reads, foreign-client reads, foreign-tenant access and forged receipt state changes.
 - **SC-003**: Concurrent replay of 100 receipts for one message/status produces one aggregated record with parts count 100; all late-receipt scenarios preserve terminal outcomes.
 - **SC-004**: All seven management areas (providers, templates, clients, blocks, messages/receipts, manual send, dashboard) are usable from the V4 portal under their respective permissions.
 - **SC-005**: A migration fixture containing every entity type retains 100% of IDs, references, hashes, statuses and timestamps, and a second import produces zero duplicate records.

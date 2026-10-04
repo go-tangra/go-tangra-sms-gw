@@ -48,7 +48,7 @@ const rr = computed(() => range.value?.results)
 </script>
 
 <template>
-  <UiPage title="SMS dashboard">
+  <UiPage title="SMS dashboard" subtitle="Deployment-wide totals across all tenants">
     <template #actions>
       <UiButton variant="soft" icon="mdi-refresh" :loading="loading" data-test="dashboard-refresh" @click="load">Refresh</UiButton>
     </template>

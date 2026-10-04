@@ -52,17 +52,20 @@ var Permissions = []gatewayclient.Permission{
 	{Resource: "blocks", Action: "manage", Description: "Create, change and delete recipient blocks"},
 	{Resource: "messages", Action: "read", Description: "Search messages and read their details and delivery receipts"},
 	{Resource: "messages", Action: "send", Description: "Send SMS messages from the portal"},
-	{Resource: "dashboard", Action: "read", Description: "Read the gateway monitoring dashboard"},
+	{Resource: "dashboard", Action: "read", Description: "Read the monitoring dashboard: deployment-wide metric totals across all tenants (no records or identifiers)"},
 }
 
 // Module roles auth provides in every tenant.
 var (
 	senderPermissions = []string{"providers:read", "templates:read", "messages:send", "messages:read"}
-	viewerPermissions = []string{"providers:read", "templates:read", "messages:read", "dashboard:read"}
+	viewerPermissions = []string{"providers:read", "templates:read", "messages:read"}
 	Roles             = []authclient.ModuleRole{
 		{Slug: "administrator", DisplayName: DisplayName + " administrator", Description: "Every SMS gateway permission", Permissions: PermissionRefs()},
 		{Slug: "sender", DisplayName: DisplayName + " sender", Description: "Send SMS messages and read providers, templates and messages", Permissions: senderPermissions},
-		{Slug: "viewer", DisplayName: DisplayName + " viewer", Description: "Read providers, templates, messages and the dashboard", Permissions: viewerPermissions},
+		{Slug: "viewer", DisplayName: DisplayName + " viewer", Description: "Read providers, templates and messages", Permissions: viewerPermissions},
+		// The dashboard shows deployment-wide totals (the metrics carry no
+		// tenant), so it is a role of its own and never part of viewing.
+		{Slug: "monitoring", DisplayName: DisplayName + " monitoring", Description: "Read the monitoring dashboard: deployment-wide totals across all tenants", Permissions: []string{"dashboard:read"}},
 	}
 )
 

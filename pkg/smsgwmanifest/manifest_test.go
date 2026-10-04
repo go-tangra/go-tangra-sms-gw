@@ -14,7 +14,8 @@ func TestRoles(t *testing.T) {
 	want := map[string][]string{
 		"administrator": smsgwmanifest.PermissionRefs(),
 		"sender":        {"providers:read", "templates:read", "messages:send", "messages:read"},
-		"viewer":        {"providers:read", "templates:read", "messages:read", "dashboard:read"},
+		"viewer":        {"providers:read", "templates:read", "messages:read"},
+		"monitoring":    {"dashboard:read"},
 	}
 	if len(smsgwmanifest.Roles) != len(want) {
 		t.Fatalf("%d roles", len(smsgwmanifest.Roles))
@@ -40,7 +41,7 @@ func TestRegistration(t *testing.T) {
 	if err := reg.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if reg.Module != "sms-gw" || len(reg.Permissions) != len(smsgwmanifest.Permissions) || len(reg.Roles) != 3 {
+	if reg.Module != "sms-gw" || len(reg.Permissions) != len(smsgwmanifest.Permissions) || len(reg.Roles) != 4 {
 		t.Fatalf("%+v", reg)
 	}
 	if req := reg.Request(); !req.GetDeclaresRoles() || len(req.GetBuiltinGrants()) != 2 {

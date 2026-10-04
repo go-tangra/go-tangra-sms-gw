@@ -253,6 +253,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Deployment-wide totals: the metrics carry no tenant, so results include every tenant's volumes (no records or identifiers). Requires dashboard:read, held only by the monitoring and administrator module roles and the owner/admin built-in grants, never by viewer. */
         post: operations["dashboardInstant"];
         delete?: never;
         options?: never;
@@ -269,6 +270,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Deployment-wide totals across all tenants, like dashboardInstant. Requires dashboard:read (monitoring role). */
         post: operations["dashboardRange"];
         delete?: never;
         options?: never;
