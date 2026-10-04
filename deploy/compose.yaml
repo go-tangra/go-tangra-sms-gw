@@ -98,11 +98,15 @@ services:
     image: ${SMSGW_IMAGE:-ghcr.io/go-tangra/go-tangra-sms-gw:dev}
     network_mode: host
     read_only: true
+    # Runs as the image's nonroot user; mounted secrets and identity files
+    # are mode 0640 and readable through their group (your gid by default
+    # via SMSGW_SECRETS_GID=$(id -g)).
+    group_add: ["${SMSGW_SECRETS_GID:-65532}"]
     command: ["-config", "/etc/sms-gw/config.yaml"]
     tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
     volumes:
       - ${SMSGW_CONFIG:-./container.yaml}:/etc/sms-gw/config.yaml:ro
-      - ${SMSGW_SECRETS:-./secrets}:/secrets:ro # kek, jwt.key (0600, gitignored)
+      - ${SMSGW_SECRETS:-./secrets}:/secrets:ro # kek, jwt.key (0640, gitignored)
       - ${SMSGW_IDENTITY:-./identity}:/identity:ro
       - smsgw-state:/state
       - smsgw-acme:/acme
