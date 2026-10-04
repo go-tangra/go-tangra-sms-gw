@@ -1,0 +1,686 @@
+openapi: 3.0.3
+info:
+  title: SMS Gateway — management API
+  version: 1.0.0
+  description: |
+    Served by the sms-gw module on the mesh and reached only through the
+    application gateway under /api/sms-gw/v1 (contracts/management-api.md).
+    Every operation verifies the forwarded platform bearer token with the auth
+    SDK and checks its x-freya-permission with the auth service; the tenant is
+    the token's tenant, never a request value. Legacy identity headers
+    (x-md-*, x-tenant-id, x-user-id, x-roles, x-authority) are refused with 403.
+
+    Errors are {"reason": "<closed vocabulary>", "detail"?: {...}}:
+    unauthenticated (401), forbidden (403), not_found (404, also for another
+    tenant's object), method_not_allowed (405), malformed_body (400),
+    validation_failed (400, detail names the parameter or field, never the
+    value), send_rejected (400, detail.message), conflict (409, name or
+    username taken), in_use (409, referenced by messages or blocks),
+    body_too_large (413), carrier_failed (502, detail.message, sanitized),
+    temporarily_unavailable (503), not_implemented (501).
+
+    Lists follow the platform list contract (go-tangra 032): page, page_size
+    (max 200), sort, order in; {items,total,page,page_size,sort,order} out; a
+    page beyond the end answers the last page.
+
+    Secrets are write-only: provider credential fields read as "__set__"
+    (omitted when empty) and API-client callback secrets as callback_secret_set.
+    On update a credential sent as "__set__" or omitted keeps the stored
+    value, "" clears it. Passwords are never returned except a generated one,
+    once, in the create or reset response (Cache-Control: no-store).
+servers: [{ url: https://platform.example.org }]
+components:
+  parameters:
+    page: { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 2147483647 } }
+    pageSize: { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+    order: { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+    q: { name: q, in: query, description: case-insensitive substring search, schema: { type: string, maxLength: 100 } }
+    providerId: { name: provider_id, in: path, required: true, schema: { $ref: '#/components/schemas/ID' } }
+    templateId: { name: template_id, in: path, required: true, schema: { $ref: '#/components/schemas/ID' } }
+    clientId: { name: client_id, in: path, required: true, schema: { $ref: '#/components/schemas/ID' } }
+    blockId: { name: block_id, in: path, required: true, schema: { $ref: '#/components/schemas/ID' } }
+    messageId: { name: message_id, in: path, required: true, schema: { type: string, format: uuid } }
+  responses:
+    Error: { description: 'refusal', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    NoContent: { description: deleted }
+  schemas:
+    Error:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string }
+        detail: { type: object, additionalProperties: true }
+    ID: { type: integer, format: int64, minimum: 1, maximum: 4294967295 }
+    Channel: { type: string, enum: [sms, viber], description: 'only sms is sent; viber is a reserved legacy channel' }
+    Timestamp: { type: string, format: date-time }
+    Name: { type: string, minLength: 1, maxLength: 128, pattern: '^[^\x00-\x1f\x7f]+$' }
+    ListMeta:
+      type: object
+      required: [total, page, page_size, sort, order]
+      properties:
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+        sort: { type: string }
+        order: { type: string, enum: [asc, desc] }
+    # ---- providers --------------------------------------------------------------
+    ProviderConfig:
+      type: object
+      description: 'string values keyed by the provider type''s field keys; credential fields are write-only'
+      additionalProperties: { type: string, maxLength: 2048 }
+      maxProperties: 32
+    Provider:
+      type: object
+      required: [id, name, type, channel, enabled, retention_days, config, created_at, updated_at]
+      properties:
+        id: { $ref: '#/components/schemas/ID' }
+        name: { type: string }
+        type: { type: string }
+        channel: { $ref: '#/components/schemas/Channel' }
+        enabled: { type: boolean }
+        retention_days: { type: integer, description: 'days messages are kept; 0 keeps them' }
+        config: { $ref: '#/components/schemas/ProviderConfig' }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+    ProviderCreated:
+      allOf:
+        - $ref: '#/components/schemas/Provider'
+        - type: object
+          properties:
+            generated_secrets:
+              type: object
+              description: 'credentials the service generated (dlr_token when left blank), shown once'
+              additionalProperties: { type: string }
+    ProviderPage:
+      allOf:
+        - $ref: '#/components/schemas/ListMeta'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/Provider' } } }
+    ProviderCreate:
+      type: object
+      additionalProperties: false
+      required: [name, type, config]
+      properties:
+        name: { $ref: '#/components/schemas/Name' }
+        type: { type: string, minLength: 1, maxLength: 32 }
+        channel: { $ref: '#/components/schemas/Channel' }
+        enabled: { type: boolean }
+        retention_days: { type: integer, minimum: 0, maximum: 36500 }
+        config: { $ref: '#/components/schemas/ProviderConfig' }
+    ProviderUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: 'absent fields keep their value; config replaces the non-credential fields'
+      properties:
+        name: { $ref: '#/components/schemas/Name' }
+        type: { type: string, minLength: 1, maxLength: 32 }
+        channel: { $ref: '#/components/schemas/Channel' }
+        enabled: { type: boolean }
+        retention_days: { type: integer, minimum: 0, maximum: 36500 }
+        config: { $ref: '#/components/schemas/ProviderConfig' }
+    ProviderField:
+      type: object
+      required: [key, label, type, required]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        type: { type: string, enum: [string, secret, url, int, select] }
+        required: { type: boolean }
+        default: { type: string }
+        placeholder: { type: string }
+        help: { type: string }
+        options: { type: array, items: { type: string } }
+    ProviderType:
+      type: object
+      required: [type, label, fields]
+      properties:
+        type: { type: string }
+        label: { type: string }
+        description: { type: string }
+        fields: { type: array, items: { $ref: '#/components/schemas/ProviderField' } }
+    ProviderTypeList:
+      type: object
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/ProviderType' } } }
+    # ---- templates --------------------------------------------------------------
+    Fragments:
+      type: object
+      description: 'named template fragments (Go text/template); SMS uses body'
+      additionalProperties: { type: string, maxLength: 16384 }
+      maxProperties: 16
+    Template:
+      type: object
+      required: [id, name, channel, enabled, fragments, variables, created_at, updated_at]
+      properties:
+        id: { $ref: '#/components/schemas/ID' }
+        name: { type: string }
+        channel: { $ref: '#/components/schemas/Channel' }
+        enabled: { type: boolean }
+        fragments: { $ref: '#/components/schemas/Fragments' }
+        variables: { type: array, items: { type: string }, description: 'properties the body refers to' }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+    TemplatePage:
+      allOf:
+        - $ref: '#/components/schemas/ListMeta'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/Template' } } }
+    TemplateCreate:
+      type: object
+      additionalProperties: false
+      required: [name, fragments]
+      properties:
+        name: { $ref: '#/components/schemas/Name' }
+        channel: { $ref: '#/components/schemas/Channel' }
+        enabled: { type: boolean }
+        fragments: { $ref: '#/components/schemas/Fragments' }
+    TemplateUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { $ref: '#/components/schemas/Name' }
+        channel: { $ref: '#/components/schemas/Channel' }
+        enabled: { type: boolean }
+        fragments: { $ref: '#/components/schemas/Fragments' }
+    Properties:
+      type: object
+      additionalProperties: { type: string, maxLength: 4096 }
+      maxProperties: 64
+    Encoding: { type: string, enum: [utf-8, gsm-03-38] }
+    PreviewRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        properties: { $ref: '#/components/schemas/Properties' }
+        encoding: { $ref: '#/components/schemas/Encoding' }
+    Preview:
+      type: object
+      required: [text, characters, parts, limit, encoding, variables, missing]
+      properties:
+        text: { type: string, description: 'rendered body; missing properties render as <no value> (as on send)' }
+        characters: { type: integer }
+        parts: { type: integer, description: 'SMS parts (0 for empty text, at most 10)' }
+        limit: { type: integer, description: 'character ceiling of the current part count' }
+        encoding: { $ref: '#/components/schemas/Encoding' }
+        variables: { type: array, items: { type: string } }
+        missing: { type: array, items: { type: string }, description: 'variables without a property' }
+    # ---- API clients ------------------------------------------------------------
+    Authority: { type: string, enum: [API_CLIENT, API_VIEWER, API_ADMIN], description: 'API_ADMIN is legacy data with no public privilege' }
+    APIClient:
+      type: object
+      required: [id, username, email, authority, enabled, callback_url, callback_secret_set, created_at, updated_at]
+      properties:
+        id: { $ref: '#/components/schemas/ID' }
+        username: { type: string }
+        email: { type: string }
+        authority: { $ref: '#/components/schemas/Authority' }
+        enabled: { type: boolean }
+        callback_url: { type: string }
+        callback_secret_set: { type: boolean }
+        last_login_at: { $ref: '#/components/schemas/Timestamp' }
+        last_login_ip: { type: string }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+    APIClientPage:
+      allOf:
+        - $ref: '#/components/schemas/ListMeta'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/APIClient' } } }
+    Password: { type: string, minLength: 8, maxLength: 72 }
+    CallbackURL: { type: string, maxLength: 2048, description: 'https (http only in development); public destinations only; "" clears' }
+    CallbackSecret: { type: string, maxLength: 256, description: 'write-only; "__set__" or omitted keeps, "" clears' }
+    APIClientCreate:
+      type: object
+      additionalProperties: false
+      required: [username]
+      properties:
+        username: { type: string, pattern: '^[A-Za-z0-9_]{4,50}$', description: 'globally unique and immutable' }
+        password: { $ref: '#/components/schemas/Password' }
+        email: { type: string, maxLength: 255 }
+        authority: { type: string, enum: [API_CLIENT, API_VIEWER] }
+        enabled: { type: boolean }
+        callback_url: { $ref: '#/components/schemas/CallbackURL' }
+        callback_secret: { $ref: '#/components/schemas/CallbackSecret' }
+    APIClientCreated:
+      type: object
+      required: [client]
+      properties:
+        client: { $ref: '#/components/schemas/APIClient' }
+        password: { type: string, description: 'generated password (only when none was supplied), shown once' }
+    APIClientUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        email: { type: string, maxLength: 255 }
+        authority: { type: string, enum: [API_CLIENT, API_VIEWER] }
+        enabled: { type: boolean }
+        callback_url: { $ref: '#/components/schemas/CallbackURL' }
+        callback_secret: { $ref: '#/components/schemas/CallbackSecret' }
+    PasswordReset:
+      type: object
+      additionalProperties: false
+      properties:
+        password: { $ref: '#/components/schemas/Password' }
+    PasswordResetResult:
+      type: object
+      properties:
+        password: { type: string, description: 'generated password (only when none was supplied), shown once' }
+    # ---- blocks -----------------------------------------------------------------
+    Recipient: { type: string, pattern: '^[0-9]{1,20}$' }
+    Block:
+      type: object
+      required: [id, recipient, description, provider_id, channel, enabled, created_by, created_at, updated_at]
+      properties:
+        id: { $ref: '#/components/schemas/ID' }
+        recipient: { type: string }
+        description: { type: string }
+        provider_id: { type: integer, nullable: true, description: 'null blocks every provider of the tenant' }
+        channel: { $ref: '#/components/schemas/Channel' }
+        enabled: { type: boolean, description: 'disabled blocks are not enforced' }
+        created_by: { type: string }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+    BlockPage:
+      allOf:
+        - $ref: '#/components/schemas/ListMeta'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/Block' } } }
+    BlockCreate:
+      type: object
+      additionalProperties: false
+      required: [recipient]
+      properties:
+        recipient: { $ref: '#/components/schemas/Recipient' }
+        description: { type: string, maxLength: 255 }
+        provider_id: { type: integer, format: int64, minimum: 1, maximum: 4294967295, nullable: true }
+        channel: { $ref: '#/components/schemas/Channel' }
+        enabled: { type: boolean }
+    BlockUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        recipient: { $ref: '#/components/schemas/Recipient' }
+        description: { type: string, maxLength: 255 }
+        provider_id: { type: integer, format: int64, minimum: 1, maximum: 4294967295, nullable: true, description: 'null: every provider' }
+        channel: { $ref: '#/components/schemas/Channel' }
+        enabled: { type: boolean }
+    # ---- messages ---------------------------------------------------------------
+    Actor:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [api_client, platform] }
+        api_client_id: { type: integer }
+        api_client_username: { type: string }
+        user_id: { type: string, description: 'platform operator (manual send)' }
+    Message:
+      type: object
+      required: [id, recipient, provider_id, provider_name, template_id, sid, priority, text, status_code, status_message, actor, dlr_ts, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        recipient: { type: string }
+        provider_id: { type: integer }
+        provider_name: { type: string }
+        template_id: { type: integer, nullable: true }
+        sid: { type: integer }
+        priority: { type: integer }
+        text: { type: string }
+        status_code: { type: integer, description: '-1 accepted by the gateway, 0 accepted by the carrier, 1 delivered, 2 failed, 16 rejected, >=1000 carrier errors, 500 carrier exchange failed' }
+        status_message: { type: string }
+        actor: { $ref: '#/components/schemas/Actor' }
+        dlr_ts: { type: integer }
+        remote_address: { type: string }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+    MessageDetail:
+      allOf:
+        - $ref: '#/components/schemas/Message'
+        - type: object
+          properties:
+            data: { type: object, additionalProperties: true, description: 'SMS options and properties of the send' }
+            evidence:
+              type: object
+              description: 'carrier exchange with credentials removed'
+              properties:
+                request: { type: string }
+                response: { type: string }
+    MessagePage:
+      allOf:
+        - $ref: '#/components/schemas/ListMeta'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/Message' } } }
+    Receipt:
+      type: object
+      required: [id, status, status_text, channel, sid, recipient, sender, timestamp, parts_received, created_at, updated_at]
+      properties:
+        id: { type: integer }
+        status: { type: integer }
+        status_text: { type: string }
+        channel: { type: string }
+        sid: { type: integer }
+        recipient: { type: string }
+        sender: { type: string }
+        timestamp: { type: integer }
+        parts_received: { type: integer }
+        remote_address: { type: string }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+    ReceiptList:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Receipt' } }
+        total: { type: integer }
+    SendRequest:
+      type: object
+      additionalProperties: false
+      required: [provider_id, template_id, to]
+      properties:
+        provider_id: { $ref: '#/components/schemas/ID' }
+        template_id: { $ref: '#/components/schemas/ID' }
+        to: { type: string, pattern: '^[0-9]{1,15}$', description: 'MSISDN digits; the recipient policy applies' }
+        properties: { $ref: '#/components/schemas/Properties' }
+        sms:
+          type: object
+          additionalProperties: false
+          properties:
+            from: { type: string, maxLength: 16 }
+            encoding: { $ref: '#/components/schemas/Encoding' }
+            concatenate: { type: integer, minimum: 1, maximum: 10 }
+    SendResult:
+      type: object
+      required: [message]
+      properties:
+        message: { $ref: '#/components/schemas/Message' }
+        carrier:
+          type: object
+          nullable: true
+          properties:
+            return_code: { type: integer }
+            return_message: { type: string }
+    # ---- dashboard --------------------------------------------------------------
+    Window: { type: string, enum: [15m, 1h, 6h, 24h, 7d] }
+    DashboardQuery:
+      type: object
+      additionalProperties: false
+      required: [window]
+      properties:
+        window: { $ref: '#/components/schemas/Window' }
+        queries: { type: array, maxItems: 16, uniqueItems: true, items: { type: string, maxLength: 64 }, description: 'names of the predefined queries (default: all of the kind)' }
+    InstantSample:
+      type: object
+      required: [labels, has_value]
+      properties:
+        labels: { type: object, additionalProperties: { type: string } }
+        value: { type: number }
+        has_value: { type: boolean }
+    RangeSeries:
+      type: object
+      required: [labels, timestamps, values]
+      properties:
+        labels: { type: object, additionalProperties: { type: string } }
+        timestamps: { type: array, items: { type: integer, description: 'unix seconds' } }
+        values: { type: array, items: { type: number, nullable: true } }
+    InstantResult:
+      type: object
+      required: [available, window, results]
+      properties:
+        available: { type: boolean, description: 'false: monitoring not configured or unreachable (reason)' }
+        reason: { type: string, enum: [not_configured, unreachable] }
+        window: { $ref: '#/components/schemas/Window' }
+        results: { type: object, additionalProperties: { type: array, items: { $ref: '#/components/schemas/InstantSample' } } }
+    RangeResult:
+      type: object
+      required: [available, window, results]
+      properties:
+        available: { type: boolean }
+        reason: { type: string, enum: [not_configured, unreachable] }
+        window: { $ref: '#/components/schemas/Window' }
+        start: { type: integer }
+        end: { type: integer }
+        step_seconds: { type: integer }
+        results: { type: object, additionalProperties: { type: array, items: { $ref: '#/components/schemas/RangeSeries' } } }
+paths:
+  # ---- providers ----------------------------------------------------------------
+  /api/sms-gw/v1/providers:
+    get:
+      operationId: listProviders
+      x-freya-permission: providers:read
+      parameters: [{ $ref: '#/components/parameters/q' }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }, { name: sort, in: query, schema: { type: string, enum: [name, type, status, created_at, updated_at] } }, { $ref: '#/components/parameters/order' }]
+      responses:
+        '200': { description: 'providers of the tenant, credentials redacted', content: { application/json: { schema: { $ref: '#/components/schemas/ProviderPage' } } } }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createProvider
+      x-freya-permission: providers:manage
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProviderCreate' } } } }
+      responses:
+        '201': { description: 'created; config validated against the type; a blank dlr_token is generated and returned once', content: { application/json: { schema: { $ref: '#/components/schemas/ProviderCreated' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /api/sms-gw/v1/providers/{provider_id}:
+    parameters: [{ $ref: '#/components/parameters/providerId' }]
+    get:
+      operationId: getProvider
+      x-freya-permission: providers:read
+      responses:
+        '200': { description: 'provider', content: { application/json: { schema: { $ref: '#/components/schemas/Provider' } } } }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      operationId: updateProvider
+      x-freya-permission: providers:manage
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProviderUpdate' } } } }
+      responses:
+        '200': { description: 'updated', content: { application/json: { schema: { $ref: '#/components/schemas/Provider' } } } }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteProvider
+      x-freya-permission: providers:manage
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/sms-gw/v1/provider-types:
+    get:
+      operationId: listProviderTypes
+      x-freya-permission: providers:read
+      responses:
+        '200': { description: 'registered provider types and their form fields', content: { application/json: { schema: { $ref: '#/components/schemas/ProviderTypeList' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  # ---- templates ----------------------------------------------------------------
+  /api/sms-gw/v1/templates:
+    get:
+      operationId: listTemplates
+      x-freya-permission: templates:read
+      parameters: [{ $ref: '#/components/parameters/q' }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }, { name: sort, in: query, schema: { type: string, enum: [name, status, created_at, updated_at] } }, { $ref: '#/components/parameters/order' }]
+      responses:
+        '200': { description: 'templates of the tenant', content: { application/json: { schema: { $ref: '#/components/schemas/TemplatePage' } } } }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createTemplate
+      x-freya-permission: templates:manage
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TemplateCreate' } } } }
+      responses:
+        '201': { description: 'created; an sms template needs a body fragment that parses', content: { application/json: { schema: { $ref: '#/components/schemas/Template' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /api/sms-gw/v1/templates/{template_id}:
+    parameters: [{ $ref: '#/components/parameters/templateId' }]
+    get:
+      operationId: getTemplate
+      x-freya-permission: templates:read
+      responses:
+        '200': { description: 'template', content: { application/json: { schema: { $ref: '#/components/schemas/Template' } } } }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      operationId: updateTemplate
+      x-freya-permission: templates:manage
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TemplateUpdate' } } } }
+      responses:
+        '200': { description: 'updated', content: { application/json: { schema: { $ref: '#/components/schemas/Template' } } } }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteTemplate
+      x-freya-permission: templates:manage
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/sms-gw/v1/templates/{template_id}/preview:
+    parameters: [{ $ref: '#/components/parameters/templateId' }]
+    post:
+      operationId: previewTemplate
+      x-freya-permission: templates:read
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PreviewRequest' } } } }
+      responses:
+        '200': { description: 'rendered body, variables and part counts (same rules as send; nothing is sent)', content: { application/json: { schema: { $ref: '#/components/schemas/Preview' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  # ---- API clients --------------------------------------------------------------
+  /api/sms-gw/v1/api-clients:
+    get:
+      operationId: listAPIClients
+      x-freya-permission: clients:read
+      parameters: [{ $ref: '#/components/parameters/q' }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }, { name: sort, in: query, schema: { type: string, enum: [username, authority, status, last_login_at, created_at] } }, { $ref: '#/components/parameters/order' }]
+      responses:
+        '200': { description: 'Hermes API clients of the tenant', content: { application/json: { schema: { $ref: '#/components/schemas/APIClientPage' } } } }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createAPIClient
+      x-freya-permission: clients:manage
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/APIClientCreate' } } } }
+      responses:
+        '201': { description: 'created; a generated password is returned once', content: { application/json: { schema: { $ref: '#/components/schemas/APIClientCreated' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /api/sms-gw/v1/api-clients/{client_id}:
+    parameters: [{ $ref: '#/components/parameters/clientId' }]
+    get:
+      operationId: getAPIClient
+      x-freya-permission: clients:read
+      responses:
+        '200': { description: 'API client', content: { application/json: { schema: { $ref: '#/components/schemas/APIClient' } } } }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      operationId: updateAPIClient
+      x-freya-permission: clients:manage
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/APIClientUpdate' } } } }
+      responses:
+        '200': { description: 'updated; the username cannot change', content: { application/json: { schema: { $ref: '#/components/schemas/APIClient' } } } }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteAPIClient
+      x-freya-permission: clients:manage
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/sms-gw/v1/api-clients/{client_id}/reset-password:
+    parameters: [{ $ref: '#/components/parameters/clientId' }]
+    post:
+      operationId: resetAPIClientPassword
+      x-freya-permission: clients:manage
+      requestBody: { required: false, content: { application/json: { schema: { $ref: '#/components/schemas/PasswordReset' } } } }
+      responses:
+        '200': { description: 'password replaced; a generated one is returned once', content: { application/json: { schema: { $ref: '#/components/schemas/PasswordResetResult' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  # ---- blocks -------------------------------------------------------------------
+  /api/sms-gw/v1/blocks:
+    get:
+      operationId: listBlocks
+      x-freya-permission: blocks:read
+      parameters: [{ $ref: '#/components/parameters/q' }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }, { name: sort, in: query, schema: { type: string, enum: [recipient, status, created_at] } }, { $ref: '#/components/parameters/order' }]
+      responses:
+        '200': { description: 'recipient blocks of the tenant', content: { application/json: { schema: { $ref: '#/components/schemas/BlockPage' } } } }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createBlock
+      x-freya-permission: blocks:manage
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BlockCreate' } } } }
+      responses:
+        '201': { description: 'created', content: { application/json: { schema: { $ref: '#/components/schemas/Block' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /api/sms-gw/v1/blocks/{block_id}:
+    parameters: [{ $ref: '#/components/parameters/blockId' }]
+    get:
+      operationId: getBlock
+      x-freya-permission: blocks:read
+      responses:
+        '200': { description: 'block', content: { application/json: { schema: { $ref: '#/components/schemas/Block' } } } }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      operationId: updateBlock
+      x-freya-permission: blocks:manage
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BlockUpdate' } } } }
+      responses:
+        '200': { description: 'updated', content: { application/json: { schema: { $ref: '#/components/schemas/Block' } } } }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteBlock
+      x-freya-permission: blocks:manage
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+  # ---- messages -----------------------------------------------------------------
+  /api/sms-gw/v1/messages:
+    get:
+      operationId: listMessages
+      x-freya-permission: messages:read
+      parameters:
+        - { name: recipient, in: query, description: recipient prefix, schema: { type: string, pattern: '^[0-9]{1,20}$' } }
+        - { name: sid, in: query, schema: { type: integer, minimum: 1, maximum: 4294967295 } }
+        - { name: status, in: query, schema: { type: integer, minimum: -1, maximum: 2147483647 } }
+        - { name: provider_id, in: query, schema: { $ref: '#/components/schemas/ID' } }
+        - { name: api_client_username, in: query, schema: { type: string, pattern: '^[A-Za-z0-9_]{1,50}$' } }
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - { name: sort, in: query, schema: { type: string, enum: [created_at, recipient, status] } }
+        - { $ref: '#/components/parameters/order' }
+      responses:
+        '200': { description: 'messages of the tenant (Hermes and manual sends), newest first by default', content: { application/json: { schema: { $ref: '#/components/schemas/MessagePage' } } } }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: sendMessage
+      x-freya-permission: messages:send
+      x-freya-timeout-seconds: 60
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SendRequest' } } } }
+      responses:
+        '201': { description: 'sent through the public send pipeline; the verified operator is recorded as the actor; no client callback', content: { application/json: { schema: { $ref: '#/components/schemas/SendResult' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /api/sms-gw/v1/messages/{message_id}:
+    parameters: [{ $ref: '#/components/parameters/messageId' }]
+    get:
+      operationId: getMessage
+      x-freya-permission: messages:read
+      responses:
+        '200': { description: 'message with sanitized carrier evidence', content: { application/json: { schema: { $ref: '#/components/schemas/MessageDetail' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /api/sms-gw/v1/messages/{message_id}/dlrs:
+    parameters: [{ $ref: '#/components/parameters/messageId' }]
+    get:
+      operationId: listMessageReceipts
+      x-freya-permission: messages:read
+      responses:
+        '200': { description: 'delivery receipts of the message, oldest first', content: { application/json: { schema: { $ref: '#/components/schemas/ReceiptList' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  # ---- dashboard ----------------------------------------------------------------
+  /api/sms-gw/v1/dashboard/instant:
+    post:
+      operationId: dashboardInstant
+      x-freya-permission: dashboard:read
+      x-freya-timeout-seconds: 30
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DashboardQuery' } } } }
+      responses:
+        '200': { description: 'predefined instant queries: sends_per_sec, success_rate, send_p95_seconds, dlrs_per_sec, delivery_p95_seconds, send_by_outcome, dlr_by_status, webhook_by_outcome, login_by_outcome, top_providers', content: { application/json: { schema: { $ref: '#/components/schemas/InstantResult' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /api/sms-gw/v1/dashboard/range:
+    post:
+      operationId: dashboardRange
+      x-freya-permission: dashboard:read
+      x-freya-timeout-seconds: 30
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DashboardQuery' } } } }
+      responses:
+        '200': { description: 'predefined range queries over the window: send_rate_by_outcome, send_latency_p95, dlr_rate_by_status', content: { application/json: { schema: { $ref: '#/components/schemas/RangeResult' } } } }
+        default: { $ref: '#/components/responses/Error' }
