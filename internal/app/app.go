@@ -1,10 +1,13 @@
-// Package app wires the sms-gw service: configuration → Freya runtime →
-// PostgreSQL, KEK envelope, audit and metrics → operator verification over
-// the pooled auth connection → management routes on the mesh HTTP server,
-// the application admin listener (health, readiness, metrics) and the public
-// Hermes listener (public.go) with carrier receipts and callbacks (dlr.go).
-// Further listeners and background workers attach through AddServer and Go;
-// Run starts and drains everything with one lifecycle context.
+// Package app wires the sms-gw service: configuration → optional lcm mesh
+// enrollment (identity.go) → Freya runtime → PostgreSQL, KEK envelope, audit
+// and metrics → operator verification over the pooled auth connection → the
+// management API on the mesh HTTP server (management.go), the application
+// admin listener (health, readiness, metrics) and the public Hermes listener
+// (public.go) with carrier receipts and callbacks (dlr.go) → gateway lease
+// and auth permission registration once ready (registration.go,
+// permissions.go). Further listeners and background workers attach through
+// AddServer and Go; Run starts and drains everything with one lifecycle
+// context.
 package app
 
 import (
@@ -13,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -31,6 +35,7 @@ import (
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/authz"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/config"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/dlr"
+	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/httpapi"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/metrics"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/provider"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/publicapi"
@@ -50,6 +55,11 @@ type Options struct {
 	Checker  authz.Checker    // nil = auth.v1.Authorization/Check, cached
 	Migrate  bool             // apply migrations with db.migrate_dsn first
 	Register func(*App) error // mounts later stories after the core is wired
+	// Remote is the federated UI build served under /ui/ (nil: none).
+	Remote fs.FS
+	// NoRegistration skips the gateway lease and auth registration workers
+	// (tests without a platform).
+	NoRegistration bool
 }
 
 // App holds every wired component.
@@ -65,9 +75,11 @@ type App struct {
 	Metrics   *metrics.Metrics
 	Authz     *authz.Authz
 	Verifier  authz.Verifier
-	// Management is the mesh HTTP API (reached only through the gateway);
-	// unmatched paths answer 404.
+	// Management is the mesh HTTP mux (reached only through the gateway):
+	// the management API under /api/sms-gw/ and the federated remote under
+	// /ui/; unmatched paths answer 404.
 	Management *http.ServeMux
+	API        *httpapi.Server
 	// Hermes domain and the public listener (public.go).
 	Auth    *auth.Service
 	SMS     *sms.Service
@@ -152,6 +164,11 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 	runtime.Admin.Addr = "127.0.0.1:0"
 	runtime.Admin.AllowNonLoopback = false
 	fopts := append([]freya.Option{freya.WithLogger(handler)}, o.Freya...)
+	enroll, err := a.enrollIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fopts = append(fopts, enroll...)
 	if a.Freya, err = freya.New(runtime, fopts...); err != nil {
 		return nil, fmt.Errorf("app: secure runtime: %w", err)
 	}
@@ -187,6 +204,13 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 	}
 	if err := a.buildPublic(); err != nil {
 		return nil, err
+	}
+	if err := a.buildManagement(o); err != nil {
+		return nil, err
+	}
+	if !o.NoRegistration {
+		a.Go(a.register)
+		a.Go(a.seedLoop)
 	}
 	if o.Register != nil {
 		if err := o.Register(a); err != nil {

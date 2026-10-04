@@ -46,7 +46,7 @@ func testConfig(t *testing.T, dsn string) config.Config {
 }
 
 func testOptions() Options {
-	return Options{KEK: make([]byte, 32), Freya: []freya.Option{freya.WithInsecureLocalDev(), freya.WithAllowAllPolicy()}}
+	return Options{KEK: make([]byte, 32), NoRegistration: true, Freya: []freya.Option{freya.WithInsecureLocalDev(), freya.WithAllowAllPolicy()}}
 }
 
 func TestUnreachableDatabaseBindsNothing(t *testing.T) {
@@ -107,5 +107,20 @@ func TestPolicyAdmitsOnlyTheGateway(t *testing.T) {
 	}
 	if p.Authorize(context.Background(), gateway, "sms-gw", "/sms_gw.service.v1.SmsService/Send").Allowed {
 		t.Fatal("legacy gRPC operation allowed")
+	}
+}
+
+func TestEnrollmentNeedsItsToken(t *testing.T) {
+	c := testConfig(t, "postgres://smsgw_app:x@127.0.0.1:1/none?sslmode=disable&connect_timeout=1")
+	c.Identity.Provider = "provided"
+	c.Enroll = config.Enroll{Enabled: true, EnrollURL: "https://gateway.example/api/lcm/v1/enroll", LCMGRPCTarget: "lcm:9945",
+		TenantID: "00000000-0000-0000-0000-000000000001", TokenFile: filepath.Join(t.TempDir(), "missing.token"), StateFile: filepath.Join(t.TempDir(), "svid.json"), Insecure: true}
+	a := &App{Cfg: c}
+	if _, err := a.enrollIdentity(context.Background()); err == nil || !strings.Contains(err.Error(), "enroll token unreadable") {
+		t.Fatalf("%v", err)
+	}
+	c.Enroll.Enabled = false
+	if opts, err := (&App{Cfg: c}).enrollIdentity(context.Background()); err != nil || opts != nil {
+		t.Fatal("disabled enrollment must add nothing")
 	}
 }

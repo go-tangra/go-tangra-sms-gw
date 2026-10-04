@@ -19,6 +19,7 @@ import (
 	freya "github.com/go-tangra/go-tangra/v4"
 
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/app"
+	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/authz"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/config"
 )
 
@@ -28,6 +29,9 @@ type Options struct {
 	KEK       []byte
 	JWTSecret string
 	Configure func(*config.Config)
+	// Verifier and Checker replace operator verification (default: deny all).
+	Verifier authz.Verifier
+	Checker  authz.Checker
 }
 
 // Running is a started application.
@@ -85,7 +89,15 @@ func Start(t testing.TB, o Options) *Running {
 	if o.Configure != nil {
 		o.Configure(&c)
 	}
-	a, err := app.Build(context.Background(), c, app.Options{KEK: o.KEK, Verifier: denyAll{}, Checker: denyAll{},
+	var v authz.Verifier = denyAll{}
+	var ch authz.Checker = denyAll{}
+	if o.Verifier != nil {
+		v = o.Verifier
+	}
+	if o.Checker != nil {
+		ch = o.Checker
+	}
+	a, err := app.Build(context.Background(), c, app.Options{KEK: o.KEK, Verifier: v, Checker: ch, NoRegistration: true,
 		Freya: []freya.Option{freya.WithInsecureLocalDev(), freya.WithAllowAllPolicy()}})
 	if err != nil {
 		t.Fatal(err)
