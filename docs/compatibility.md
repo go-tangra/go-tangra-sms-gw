@@ -6,7 +6,7 @@ Source inspection corrected one planning error: logout is deliberately whitelist
 
 Security changes planned: tenant-scoped data, fail-closed unsupported authority, credential sealing/redaction, bounded queries and protected V4 management. Exact raw-evidence redaction and pagination limits must be documented with runtime fixtures before release.
 
-The public Hermes listener (US1) and carrier receipts with client callbacks (US2) are implemented, see below; management and migration follow in later stories. No legacy database, carrier or production certificates have been touched.
+The public Hermes listener (US1), carrier receipts with client callbacks (US2), V4 management (US3) and migration/operation (US4) are implemented, see below. No production legacy database, real carrier or production certificate has been touched; migrations were rehearsed on local snapshot copies only.
 
 ## Captured transport behavior
 
@@ -120,3 +120,20 @@ The legacy admin services (provider, template, API client, block, message and da
 - Manual send runs the public send pipeline (same validation order, blocks, rendering, carrier exchange and stored outcome) with the verified operator recorded as a separate platform actor; no client callback follows. Domain refusals are 400 `send_rejected` with the domain message; a failed carrier exchange is 502 `carrier_failed` (sanitized text; the message is stored once and never resent).
 - Message details show the stored, scrubbed carrier evidence (scrubbed again on display) and the send data; Hermes reads still never return evidence.
 - Dashboard: the legacy dashboard posted arbitrary PromQL to the backend. V4 only runs the legacy dashboard's own queries (named, e.g. `send_by_outcome`) with its window presets (15m, 1h, 6h, 24h, 7d), bounded series, points, response size and a 10 s timeout. Missing or failing monitoring answers `available: false` with `not_configured`/`unreachable` instead of an error. The series carry no tenant label (by design of the metrics), so the dashboard shows deployment-wide aggregates to every tenant holding `dashboard:read` — no records or identifiers, but other tenants' volumes are included.
+
+## Migration and operation (US4, T043–T052)
+
+Migration (`internal/migrate`, `cmd/smsgw-migrate`, details in `docs/migration.md`):
+
+- The source is a read-only snapshot read in one repeatable-read transaction; the legacy schema is checked column by column (missing columns stop the run, unknown ones are reported). Destination tenant is explicit (UUID or a name mapped in the import configuration); there is no tenant inference.
+- Ids, usernames, bcrypt hashes, references, statuses, texts, data, receipt aggregation and timestamps are preserved; collisions are refused, never remapped. Zero references become NULL (block provider 0, message template 0); legacy admin sends (owner 0 or NULL) require an explicit platform actor; login records of unknown or deleted clients are imported unresolved (no tenant), matching what V4 does when a client is deleted.
+- Raw carrier evidence is decompressed from the legacy gzip storage and scrubbed with the same rules as new sends before it is stored; provider configurations and callback secrets are resealed with the destination KEK and bound to tenant and row. `API_ADMIN`, Viber channels and unregistered provider types are imported as data and reported. `delete_time` was never enforced by the legacy service: such rows are imported live and counted.
+- Apply is one transaction with read-back reconciliation; a repeated apply of the same snapshot is a no-op, a later snapshot applies only its differences. Destination records the snapshot does not contain refuse the import (protects post-cutover traffic), so re-imports after traffic start from an empty tenant.
+- Token continuity: preserving the legacy JWT secret keeps legacy-issued tokens valid (verified with a legacy-shaped token); tokens revoked by legacy logout become valid again until expiry, as after any legacy restart. A new secret forces re-login.
+
+Operation:
+
+- `smsgwsvc bootstrap` and `version` are new; bootstrap grants the application role named in `db.dsn` and refuses a role that bypasses row-level security in production.
+- Public HTTPS (static or ACME) keeps the legacy behaviour that every certificate problem is nonfatal (plain HTTP keeps serving); V4 additionally treats an HTTPS port that cannot be bound as nonfatal and reports the state in readiness (`public_tls`). Static TLS together with ACME is a configuration error (the legacy service silently preferred ACME). `acme.http_addr` is accepted only with the `http-01` challenge.
+- Retention runs per tenant provider in batches with receipts deleted in the same statement (the legacy deleted receipts and messages in separate statements); outcomes are `ok`, `partial` or `error` as before. `SMS_GW_HOUSEKEEPING_INTERVAL` must be a Go duration within 1m–24h; the legacy bare-seconds form and silent clamping are refused at start.
+- An expired mesh identity takes the module out of readiness, releases the gateway lease and refuses mesh traffic; the public Hermes listener keeps serving (separate trust domain).
