@@ -1,0 +1,12 @@
+# Freya service-to-service policy for sms-gw: deny by default. Only the
+# gateway reaches the management API (browser traffic, the federated remote
+# and health probes); it carries the operator's bearer token, which sms-gw
+# verifies itself. No other service calls sms-gw on the mesh. Hermes clients
+# and carriers use the separate public listener, outside this policy.
+version: sms-gw-dev-1
+rules:
+  - id: gateway-management
+    from: ["spiffe://example.org/svc/gateway"]
+    to: ["sms-gw"]
+    operations: ["GET *", "HEAD *", "POST *", "PATCH *", "DELETE *"]
+    effect: allow
