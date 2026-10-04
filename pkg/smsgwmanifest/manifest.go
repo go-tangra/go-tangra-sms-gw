@@ -91,13 +91,14 @@ var Abilities = []gatewayclient.Ability{
 	{Action: []string{"read"}, Subject: []string{"SmsDashboard"}, Requires: "dashboard:read"},
 }
 
-// Nav lists the navigation contributions.
+// Nav lists the navigation contributions. The shell renders their icons, so
+// each must be in the kit's icon set (@go-tangra/ui ICONS; ui tests check).
 var Nav = []gatewayclient.NavEntry{
-	{Title: "SMS providers", Path: "/sms-gw/providers", Icon: "mdi-cellphone-wireless", Order: 900, Requires: "providers:read"},
+	{Title: "SMS providers", Path: "/sms-gw/providers", Icon: "mdi-broadcast", Order: 900, Requires: "providers:read"},
 	{Title: "SMS templates", Path: "/sms-gw/templates", Icon: "mdi-file-document-edit-outline", Order: 901, Requires: "templates:read"},
-	{Title: "SMS API clients", Path: "/sms-gw/api-clients", Icon: "mdi-key-chain-variant", Order: 902, Requires: "clients:read"},
+	{Title: "SMS API clients", Path: "/sms-gw/api-clients", Icon: "mdi-key-variant", Order: 902, Requires: "clients:read"},
 	{Title: "SMS blocks", Path: "/sms-gw/blocks", Icon: "mdi-cancel", Order: 903, Requires: "blocks:read"},
-	{Title: "SMS messages", Path: "/sms-gw/messages", Icon: "mdi-message-processing-outline", Order: 904, Requires: "messages:read"},
+	{Title: "SMS messages", Path: "/sms-gw/messages", Icon: "mdi-message-text-outline", Order: 904, Requires: "messages:read"},
 	{Title: "SMS dashboard", Path: "/sms-gw/dashboard", Icon: "mdi-chart-line", Order: 905, Requires: "dashboard:read"},
 }
 

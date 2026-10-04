@@ -143,9 +143,9 @@ jobs:
       - name: Build
         run: npm run build
 
-      # The built mf-manifest.json agrees with pkg/smsgwmanifest.
+      # The built mf-manifest.json agrees with pkg/smsgwmanifest; nav icons are in the kit set.
       - name: Built remote matches the manifest
-        run: go test -count=1 -tags ui ./ && go test -count=1 ./
+        run: go test -count=1 -tags ui ./ && go test -count=1 ./ && SMSGW_REQUIRE_UI_KIT=1 go test -count=1 -run TestNavIconsInKitSet ../pkg/smsgwmanifest/
 
   docker:
     name: Docker image

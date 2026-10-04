@@ -8,3 +8,5 @@
   exclude: rootcolor, rootscrollgutter, scrollbar, svg, properties;
 }
 @plugin "@iconify/tailwind4";
+
+/* src/safelist.ts names the runtime-built classes this remote must emit. */

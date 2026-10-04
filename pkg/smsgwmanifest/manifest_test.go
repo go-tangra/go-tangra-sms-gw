@@ -1,6 +1,7 @@
 package smsgwmanifest_test
 
 import (
+	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -97,6 +98,31 @@ func TestManifest(t *testing.T) {
 			if !strings.HasPrefix(s, "Sms") {
 				t.Errorf("ability subject %s may collide with other modules", s)
 			}
+		}
+	}
+}
+
+// TestNavIconsInKitSet: the shell renders navigation icons from its own
+// stylesheet, which carries only the kit's icon set (@go-tangra/ui ICONS).
+func TestNavIconsInKitSet(t *testing.T) {
+	raw, err := os.ReadFile("../../ui/node_modules/@go-tangra/ui/dist/icons.d.ts")
+	if err != nil {
+		if os.Getenv("SMSGW_REQUIRE_UI_KIT") != "" {
+			t.Fatal(err)
+		}
+		t.Skipf("kit not installed (npm ci in ui/): %v", err)
+	}
+	decl := regexp.MustCompile(`ICONS: readonly \[([^\]]*)\]`).FindSubmatch(raw)
+	if decl == nil {
+		t.Fatal("no ICONS declaration in the kit")
+	}
+	kit := map[string]bool{}
+	for _, m := range regexp.MustCompile(`"(mdi-[a-z0-9-]+)"`).FindAllSubmatch(decl[1], -1) {
+		kit[string(m[1])] = true
+	}
+	for _, n := range smsgwmanifest.Nav {
+		if !kit[n.Icon] {
+			t.Errorf("nav %s: icon %s is not in the kit set", n.Path, n.Icon)
 		}
 	}
 }
