@@ -32,6 +32,11 @@ type Options struct {
 	// Verifier and Checker replace operator verification (default: deny all).
 	Verifier authz.Verifier
 	Checker  authz.Checker
+	// Freya replaces the default runtime options (in-memory development CA
+	// and allow-all policy), e.g. with an identity provider under test.
+	Freya []freya.Option
+	// Register runs the gateway lease and auth registration workers.
+	Register bool
 }
 
 // Running is a started application.
@@ -97,8 +102,11 @@ func Start(t testing.TB, o Options) *Running {
 	if o.Checker != nil {
 		ch = o.Checker
 	}
-	a, err := app.Build(context.Background(), c, app.Options{KEK: o.KEK, Verifier: v, Checker: ch, NoRegistration: true,
-		Freya: []freya.Option{freya.WithInsecureLocalDev(), freya.WithAllowAllPolicy()}})
+	fopts := o.Freya
+	if fopts == nil {
+		fopts = []freya.Option{freya.WithInsecureLocalDev(), freya.WithAllowAllPolicy()}
+	}
+	a, err := app.Build(context.Background(), c, app.Options{KEK: o.KEK, Verifier: v, Checker: ch, NoRegistration: !o.Register, Freya: fopts})
 	if err != nil {
 		t.Fatal(err)
 	}

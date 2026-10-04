@@ -43,7 +43,7 @@ func snapshot(t *testing.T) *Snapshot {
 		Messages: []LegacyMessage{
 			{ID: "00000000-0000-4000-8000-000000000101", CreateBy: ptr(int64(1)), CreateTime: &t0, UpdateTime: &t0, Recipient: "359888000100", Priority: 2,
 				ProviderID: 10, TemplateID: 20, StatusCode: 1, Message: "hi", StatusMessage: ptr("sms_delivered"), Data: []byte(`{"sms": {}}`),
-				RawRequest: gz(t, `POST /send HTTP/1.1\r\n\r\n{"token":"`+carrierToken+`","callback_url":"https://gw.example.com/dlr?dlr_token=`+dlrToken+`"}`),
+				RawRequest:  gz(t, `POST /send HTTP/1.1\r\n\r\n{"token":"`+carrierToken+`","callback_url":"https://gw.example.com/dlr?dlr_token=`+dlrToken+`"}`),
 				RawResponse: []byte(`HTTP/1.1 200 OK` + "\r\n\r\n" + `{"return_code":0}`)},
 			{ID: "00000000-0000-4000-8000-000000000103", CreateBy: ptr(int64(0)), CreateTime: &t0, UpdateTime: nil, Recipient: "359888000102", ProviderID: 10,
 				TemplateID: 0, StatusCode: 0, Message: "admin"},
