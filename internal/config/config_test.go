@@ -63,6 +63,7 @@ func TestValidateRefusals(t *testing.T) {
 		"acme wildcard":             {func(c *Config) { enableACME(c); c.ACME.Domains = []string{"*.example.org"} }, "not a host name"},
 		"acme http directory":       {func(c *Config) { enableACME(c); c.ACME.DirectoryURL = "http://ca.example.org/dir" }, "directory_url"},
 		"acme eab half":             {func(c *Config) { enableACME(c); c.ACME.EABKeyID = "kid" }, "eab"},
+		"acme http addr alpn":       {func(c *Config) { enableACME(c); c.ACME.HTTPAddr = "127.0.0.1:8080" }, "http-01 challenges only"},
 		"jwt secret missing":        {func(c *Config) { c.PublicAuth.JWTSecret = SecretRef{} }, "jwt_secret"},
 		"jwt secret ambiguous":      {func(c *Config) { c.PublicAuth.JWTSecret = SecretRef{File: "a", Env: "B"} }, "jwt_secret"},
 		"short access ttl":          {func(c *Config) { c.PublicAuth.AccessTTLSeconds = 1 }, "access_ttl"},

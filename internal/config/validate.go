@@ -208,6 +208,9 @@ func (c Config) validateACME(prod bool) error {
 	if a.Challenge != "http-01" && a.Challenge != "tls-alpn-01" {
 		return errors.New("config: acme.challenge must be http-01 or tls-alpn-01")
 	}
+	if a.HTTPAddr != "" && a.Challenge != "http-01" {
+		return errors.New("config: acme.http_addr serves http-01 challenges only")
+	}
 	if a.RenewBefore < 24*time.Hour || a.RenewBefore > 60*24*time.Hour {
 		return errors.New("config: acme.renew_before must be within [24h, 1440h]")
 	}

@@ -1,8 +1,12 @@
 package app
 
 import (
+	"context"
+	"crypto/tls"
+	"net/http"
 	"time"
 
+	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/acme"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/auth"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/provider"
 	_ "github.com/go-tangra/go-tangra-sms-gw/v4/internal/provider/voicecom" // registers the carrier type
@@ -15,8 +19,20 @@ import (
 // carrierTimeout keeps one carrier exchange within the public write timeout.
 const carrierTimeout = 25 * time.Second
 
+// warmDelay lets the listeners bind before certificates are prefetched.
+const warmDelay = 3 * time.Second
+
+// Public HTTPS states reported by readiness (never part of its verdict).
+const (
+	TLSDisabled    = "disabled"
+	TLSStatic      = "static"
+	TLSACME        = "acme"
+	TLSUnavailable = "unavailable"
+)
+
 // buildPublic wires the Hermes domain services and binds the public
-// listener (plain HTTP; static TLS and ACME are attached by T048).
+// listeners: plain HTTP always, HTTPS with a static keypair or ACME when
+// configured (see publicTLS).
 func (a *App) buildPublic() error {
 	c := a.Cfg
 	iss, err := auth.NewIssuer(a.JWTSecret.Reveal(), c.PublicAuth.AccessTTL(), c.PublicAuth.RefreshTTL())
@@ -36,11 +52,68 @@ func (a *App) buildPublic() error {
 		Receipts: a.buildReceipts(proxy),
 		Login:    ratelimit.New(c.RateLimits.LoginPerMinute, c.RateLimits.LoginBurst, 50000),
 		Send:     ratelimit.New(c.RateLimits.SendPerMinute, c.RateLimits.SendBurst, 10000)})
-	if c.Public.TLSEnabled() || c.ACME.Enabled {
-		a.Log.Warn("public HTTPS is configured but not served yet; only the plain public listener is active")
+	tlsCfg, challenge := a.publicTLS()
+	if a.publicAddr, err = a.AddServer("public", c.Public.HTTPAddr, publicapi.WithChallenge(a.Public, challenge), nil); err != nil {
+		return err
 	}
-	a.publicAddr, err = a.AddServer("public", c.Public.HTTPAddr, a.Public, nil)
-	return err
+	if tlsCfg != nil {
+		if a.publicHTTPSAddr, err = a.AddServer("public-https", c.Public.HTTPSAddr, a.Public, tlsCfg); err != nil {
+			a.tlsFailed("public https listener unavailable; plain HTTP still serving", err)
+		}
+	}
+	return nil
+}
+
+// publicTLS resolves the public certificate source. Its keys are never the
+// mesh identity. Every failure is logged and reported by readiness while
+// the plain public listener, the mesh and the admin listener keep serving.
+func (a *App) publicTLS() (*tls.Config, http.Handler) {
+	c := a.Cfg
+	a.publicTLSState = TLSDisabled
+	switch {
+	case c.ACME.Enabled:
+		m, err := acme.New(c.ACME, a.Log.With("component", "acme"))
+		if err != nil {
+			a.tlsFailed("acme configured but unusable; public HTTPS disabled, plain HTTP still serving", err)
+			return nil, nil
+		}
+		a.PublicCerts, a.publicTLSState = m, TLSACME
+		if c.ACME.HTTPAddr != "" {
+			if _, err := a.AddServer("acme-http", c.ACME.HTTPAddr, m.RedirectHandler(), nil); err != nil {
+				a.Log.Warn("dedicated acme challenge listener disabled; challenges are still answered on the public listener", "err", err)
+			}
+		}
+		if c.ACME.Prefetch {
+			a.Go(func(ctx context.Context) {
+				if pause(ctx, warmDelay) {
+					m.Warm(ctx)
+				}
+			})
+		}
+		return m.TLSConfig(), m.ChallengeHandler()
+	case c.Public.TLSEnabled():
+		cfg, err := publicapi.LoadStaticTLS(c.Public.TLSCertFile, c.Public.TLSKeyFile)
+		if err != nil {
+			a.tlsFailed("public certificate unusable; public HTTPS disabled, plain HTTP still serving", err)
+			return nil, nil
+		}
+		a.publicTLSState = TLSStatic
+		return cfg, nil
+	}
+	return nil, nil
+}
+
+func (a *App) tlsFailed(msg string, err error) {
+	a.publicTLSState = TLSUnavailable
+	a.Log.Warn(msg, "err", err)
+}
+
+// PublicHTTPSAddr is the bound public HTTPS listener ("" when not serving).
+func (a *App) PublicHTTPSAddr() string {
+	if a.publicHTTPSAddr == nil {
+		return ""
+	}
+	return a.publicHTTPSAddr.String()
 }
 
 // PublicAddr is the bound public Hermes listener address.

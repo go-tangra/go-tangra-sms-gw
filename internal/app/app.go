@@ -30,6 +30,7 @@ import (
 	"github.com/go-tangra/go-tangra/v4/transport"
 	"github.com/go-tangra/go-tangra/v4/transport/tlsconf"
 
+	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/acme"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/audit"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/auth"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/authz"
@@ -89,7 +90,13 @@ type App struct {
 	Receipts  *dlr.Processor
 	Callbacks *webhook.Dispatcher
 
-	publicAddr net.Addr
+	// PublicCerts is the ACME manager of the public HTTPS listener (nil
+	// without ACME); never the mesh identity.
+	PublicCerts *acme.Manager
+
+	publicAddr      net.Addr
+	publicHTTPSAddr net.Addr
+	publicTLSState  string
 
 	servers  []server
 	workers  []func(context.Context)
@@ -240,15 +247,21 @@ func (a *App) AddServer(name, addr string, h http.Handler, tlsCfg *tls.Config) (
 	return lis.Addr(), nil
 }
 
-// Readiness reports the identity and database state.
+// Readiness reports the identity and database state, and the public HTTPS
+// state (disabled, static, acme or unavailable), which is informational: a
+// public certificate problem never takes the service out of readiness.
 type Readiness struct {
-	Identity string `json:"identity"`
-	Database string `json:"database"`
+	Identity  string `json:"identity"`
+	Database  string `json:"database"`
+	PublicTLS string `json:"public_tls"`
 }
 
 // Ready checks the mesh identity and the database (each bounded).
 func (a *App) Ready(ctx context.Context) (Readiness, bool) {
-	r := Readiness{Identity: "ok", Database: "ok"}
+	r := Readiness{Identity: "ok", Database: "ok", PublicTLS: a.publicTLSState}
+	if r.PublicTLS == "" {
+		r.PublicTLS = TLSDisabled
+	}
 	if a.Freya == nil || !a.Freya.Ready() {
 		r.Identity = "unavailable"
 	}
