@@ -9,10 +9,12 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -22,7 +24,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/app/apptest"
-	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/provider/voicecom"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/repo"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/sealed"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/store"
@@ -97,15 +98,16 @@ type result struct {
 // replay drives the V4 public listener through the capture script's
 // scenario, in its order, against a database seeded like the capture.
 type replay struct {
-	t       *testing.T
-	db      *storetest.DB
-	repo    *repo.Postgres
-	env     *sealed.Envelope
-	kek     []byte
-	carrier *captureCarrier
-	running *apptest.Running
-	base    string
-	client  *http.Client
+	t        *testing.T
+	db       *storetest.DB
+	repo     *repo.Postgres
+	env      *sealed.Envelope
+	kek      []byte
+	carrier  *captureCarrier
+	receiver *captureReceiver
+	running  *apptest.Running
+	base     string
+	client   *http.Client
 
 	mu     sync.Mutex
 	names  map[string]string // actual value -> placeholder
@@ -286,27 +288,29 @@ func (r *replay) dataID(t *testing.T, res result) string {
 	return out.Data.ID
 }
 
-// receipt applies a carrier receipt the way the legacy processor did.
-// Receipt ingestion is US2 (T026/T027); until it is wired the scenario's
-// receipts enter through the same repository primitives.
-func (r *replay) receipt(t *testing.T, id string, status uint32, to uint64, ts int64) {
+// carrierReceipt is the legacy mock carrier's automatic receipt: a GET of
+// the submission's callback URL with the receipt merged into its query.
+func (r *replay) carrierReceipt(t *testing.T, id string, status int, to uint64, ts int64) result {
 	t.Helper()
-	ctx := context.Background()
-	err := r.repo.InTenant(ctx, tenant, func(tx *repo.Tx) error {
-		if _, err := tx.LockMessage(ctx, id); err != nil {
-			return err
-		}
-		text := voicecom.StatusText(int32(status))
-		if _, err := tx.AddReceipt(ctx, repo.Receipt{TenantID: tenant, MessageID: id, Channel: "sms", Sid: 9999, StatusText: text,
-			MessageStatus: status, Recipient: to, Sender: "Capture", Timestamp: ts, RemoteAddress: "127.0.0.1"}); err != nil {
-			return err
-		}
-		_, err := tx.ApplyStatus(ctx, id, int32(status), text, ts)
-		return err
-	})
+	cb := r.carrier.callbackURL(id)
+	if cb == "" {
+		t.Fatalf("carrier has no submission for %s", id)
+	}
+	u, err := url.Parse(cb)
 	if err != nil {
 		t.Fatal(err)
 	}
+	q := u.Query()
+	for k, v := range map[string]string{"channel": "sms", "from": "Capture", "message_status": strconv.Itoa(status), "request_id": id, "sid": "9999",
+		"timestamp": strconv.FormatInt(ts, 10), "to": strconv.FormatUint(to, 10)} {
+		q.Set(k, v)
+	}
+	u.RawQuery = q.Encode()
+	res, err := r.do("", "GET", u.String(), "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
 }
 
 // ---------- seed ----------
@@ -317,7 +321,7 @@ func (r *replay) seed(t *testing.T, gw string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rcv := "http://127.0.0.1:9/" // callbacks are US2; the URL is stored only
+	rcv := r.receiver.URL + "/"
 	clients := []struct {
 		user, auth, status, url, secret string
 	}{
@@ -421,8 +425,11 @@ func (r *replay) seed(t *testing.T, gw string) {
 	if err := owner.SyncSequences(ctx); err != nil {
 		t.Fatal(err)
 	}
-	r.names[callbackSecret], r.names[carrierToken] = "{{callback_secret}}", "{{carrier_token}}"
-	r.names[tAuto], r.names[tManual], r.names[tSlow] = "{{dlr_token:auto}}", "{{dlr_token:manual}}", "{{dlr_token:slow}}"
+	r.name(callbackSecret, "callback_secret")
+	r.name(carrierToken, "carrier_token")
+	r.name(tAuto, "dlr_token:auto")
+	r.name(tManual, "dlr_token:manual")
+	r.name(tSlow, "dlr_token:slow")
 }
 
 // captureCarrier is the capture's carrier set: the legacy mock's accepting
@@ -431,13 +438,30 @@ type captureCarrier struct {
 	*httptest.Server
 	slowEntered chan struct{}
 	slowRelease chan struct{}
+	mu          sync.Mutex
+	callbacks   map[string]string // request_id -> callback_url
+}
+
+func (c *captureCarrier) callbackURL(id string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.callbacks[id]
 }
 
 func newCaptureCarrier(t *testing.T) *captureCarrier {
-	c := &captureCarrier{slowEntered: make(chan struct{}, 1), slowRelease: make(chan struct{})}
+	c := &captureCarrier{slowEntered: make(chan struct{}, 1), slowRelease: make(chan struct{}), callbacks: map[string]string{}}
 	accept := `{"return_code":0,"return_message":"Message accepted","channels":{"sms":{"send_order":1,"message_parts":1}}}`
 	c.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		_, _ = io.ReadAll(req.Body)
+		raw, _ := io.ReadAll(req.Body)
+		var sub struct {
+			RequestID   string `json:"request_id"`
+			CallbackURL string `json:"callback_url"`
+		}
+		if json.Unmarshal(raw, &sub) == nil && sub.RequestID != "" {
+			c.mu.Lock()
+			c.callbacks[sub.RequestID] = sub.CallbackURL
+			c.mu.Unlock()
+		}
 		reply := func(code int, body string) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(code)
@@ -465,4 +489,53 @@ func newCaptureCarrier(t *testing.T) *captureCarrier {
 	}))
 	t.Cleanup(c.Close)
 	return c
+}
+
+// captureReceiver is the capture's client callback receiver: /ok answers
+// 204, /fail 500 and /redirect 302 to /ok.
+type captureReceiver struct {
+	*httptest.Server
+	mu   sync.Mutex
+	hits []delivery
+}
+
+type delivery struct {
+	path   string
+	header http.Header
+	body   []byte
+	at     time.Time
+}
+
+func newCaptureReceiver(t *testing.T) *captureReceiver {
+	c := &captureReceiver{}
+	c.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(io.LimitReader(req.Body, 1<<20))
+		h := req.Header.Clone()
+		h.Set("Host", req.Host)
+		c.mu.Lock()
+		c.hits = append(c.hits, delivery{req.URL.Path, h, body, time.Now()})
+		c.mu.Unlock()
+		switch {
+		case strings.HasPrefix(req.URL.Path, "/fail"):
+			w.WriteHeader(http.StatusInternalServerError)
+		case strings.HasPrefix(req.URL.Path, "/redirect"):
+			http.Redirect(w, req, "/ok", http.StatusFound)
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	t.Cleanup(c.Close)
+	return c
+}
+
+func (c *captureReceiver) deliveries(match func(path string) bool) []delivery {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []delivery
+	for _, d := range c.hits {
+		if match(d.path) {
+			out = append(out, d)
+		}
+	}
+	return out
 }

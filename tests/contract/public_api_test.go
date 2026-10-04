@@ -29,11 +29,12 @@ import (
 // accounts, carriers, templates and blocks, and compares every recorded
 // response byte for byte after the capture's normalization. The only
 // differences accepted are the deliberate V4 changes listed in v4Changes,
-// each citing docs/compatibility.md; cases owned by later stories are
-// listed in deferred. Every captured case is accounted for.
+// each citing docs/compatibility.md; observation-only cases (no response of
+// their own) are checked where they occur. Every captured case is accounted
+// for.
 func TestLegacyReplay(t *testing.T) {
 	db := storetest.Start(t)
-	r := &replay{t: t, db: db, repo: db.Repo(), kek: []byte(strings.Repeat("k", 32)), carrier: newCaptureCarrier(t),
+	r := &replay{t: t, db: db, repo: db.Repo(), kek: []byte(strings.Repeat("k", 32)), carrier: newCaptureCarrier(t), receiver: newCaptureReceiver(t),
 		client: &http.Client{Timeout: 60 * time.Second}, names: map[string]string{}, values: map[string]string{},
 		got: map[string]result{}, ids: map[string]int64{}, tokens: map[string]map[string]string{}}
 	var err error
@@ -42,6 +43,7 @@ func TestLegacyReplay(t *testing.T) {
 	}
 	relaxed := func(c *config.Config) {
 		c.RateLimits = config.RateLimits{LoginPerMinute: 1e6, LoginBurst: 100000, SendPerMinute: 1e6, SendBurst: 100000, DLRPerMinute: 1e6, DLRBurst: 100000}
+		c.Webhook.AllowHTTP, c.Webhook.AllowPrivate = true, true // the loopback capture receiver
 	}
 	r.running = apptest.Start(t, apptest.Options{DSN: db.AppDSN, KEK: r.kek, JWTSecret: jwtSecret, Configure: relaxed})
 	r.base = r.running.Public
@@ -55,7 +57,10 @@ func TestLegacyReplay(t *testing.T) {
 	r.earlyReceipt(t)
 	r.reads(t)
 	r.receipts(t)
+	r.concurrency(t)
 	r.logout(t)
+	r.webhookClients(t)
+	r.webhooks(t)
 	r.restart(t)
 
 	// The capture names every message it did not name otherwise by its
@@ -456,7 +461,8 @@ func (r *replay) earlyReceipt(t *testing.T) {
 	r.name(id, "msg:slow-carrier")
 	r.call("get-while-carrier-pending")
 	r.call("list-while-carrier-pending")
-	r.receipt(t, id, 1, 359888000210, fixedTS) // dlr-before-carrier-response
+	r.call("dlr-before-carrier-response")
+	r.checkMessageState(t, "dlr-before-carrier-response", "db_row_after_dlr", id)
 	close(r.carrier.slowRelease)
 	res := <-done
 	r.record("send-carrier-response-after-early-dlr", res)
@@ -483,29 +489,37 @@ func (r *replay) receipts(t *testing.T) {
 	id := r.messageID(t, "359888000220")
 	r.name(id, "msg:receipts")
 	r.call("dlrs-none-yet")
-	// dlr-intermediate, dlr-duplicate-intermediate, dlr-alias-path-terminal,
-	// dlr-after-terminal and dlr-unknown-status-code; the rejected receipts
-	// in between change nothing.
-	for _, x := range []struct {
-		status uint32
-		ts     int64
-	}{{8, fixedTS}, {8, fixedTS + 5}, {1, fixedTS + 10}, {2, fixedTS + 20}, {77, fixedTS}} {
-		r.receipt(t, id, x.status, 359888000220, x.ts)
+	r.call("dlr-intermediate")
+	r.checkMessageState(t, "dlr-intermediate", "db_row", id)
+	r.call("dlr-duplicate-intermediate")
+	r.checkReceiptRows(t, "dlr-duplicate-intermediate", "dlr_rows", id)
+	r.call("dlr-alias-path-terminal")
+	r.checkMessageState(t, "dlr-alias-path-terminal", "db_row", id)
+	r.call("dlr-after-terminal")
+	r.checkMessageState(t, "dlr-after-terminal", "db_row", id)
+	r.checkReceiptRows(t, "dlr-after-terminal", "dlr_rows", id)
+	for _, c := range []string{"dlr-wrong-token", "dlr-missing-token", "dlr-unknown-request-id", "dlr-empty-request-id", "dlr-malformed-status",
+		"dlr-unknown-status-code", "dlr-post-method", "dlr-camel-case-params"} {
+		r.call(c)
 	}
-	r.call("dlr-post-method")
+	r.checkReceiptRows(t, "dlr-camel-case-params", "dlr_rows", id)
+	r.checkMessageState(t, "dlr-camel-case-params", "db_row", id)
 	for _, c := range []string{"dlrs-own", "dlrs-own-v1-alias", "dlrs-foreign", "dlrs-admin", "dlrs-nonexistent", "dlrs-no-token"} {
 		r.call(c)
 	}
 	r.raw("POST", "/hermes/v1/sms", r.sendBody("legacy", "static", 359888000221, nil), r.bearer("client_a"))
 	lid := r.messageID(t, "359888000221")
 	r.name(lid, "msg:legacy-provider")
-	r.receipt(t, lid, 1, 359888000221, fixedTS) // dlr-provider-without-token-accepts-any
+	r.call("dlr-provider-without-token-accepts-any")
+	r.checkMessageState(t, "dlr-provider-without-token-accepts-any", "db_row", lid)
 	res := r.call("send-roundtrip")
 	rid := r.dataID(t, res)
 	r.name(rid, "msg:roundtrip")
 	ts := time.Now().Unix()
-	r.receipt(t, rid, 1, 359888000222, ts) // the legacy mock's automatic receipt
 	r.name(itoa(int(ts)), "unix_seconds:carrier_dlr")
+	r.checkCarrierReceipt(t, r.carrierReceipt(t, rid, 1, 359888000222, ts))
+	r.checkMessageState(t, "send-roundtrip", "db_row_after_carrier_dlr", rid)
+	r.checkReceiptRows(t, "send-roundtrip", "dlr_rows", rid)
 	r.call("dlrs-roundtrip")
 	r.call("get-roundtrip")
 }
@@ -585,31 +599,11 @@ func (r *replay) checkStatuses(t *testing.T, c string, got []int) {
 
 // ---------- comparison ----------
 
-// deferred are captured cases another story replays.
-var deferred = map[string]string{
-	"dlr-100-concurrent-same-status":         "US2 receipt ingestion (T024/T026)",
-	"dlr-after-terminal":                     "US2 receipt ingestion (T024/T027); its effect is applied through the repository above",
-	"dlr-alias-path-terminal":                "US2 receipt ingestion (T024/T027); its effect is applied through the repository above",
-	"dlr-before-carrier-response":            "US2 receipt ingestion (T024/T027); its effect is applied through the repository above",
-	"dlr-camel-case-params":                  "US2 receipt ingestion (T024/T027)",
-	"dlr-duplicate-intermediate":             "US2 receipt ingestion (T024/T027); its effect is applied through the repository above",
-	"dlr-empty-request-id":                   "US2 receipt ingestion (T024/T027)",
-	"dlr-intermediate":                       "US2 receipt ingestion (T024/T027); its effect is applied through the repository above",
-	"dlr-malformed-status":                   "US2 receipt ingestion (T024/T027)",
-	"dlr-missing-token":                      "US2 receipt ingestion (T024/T027)",
-	"dlr-provider-without-token-accepts-any": "US2 receipt ingestion (T024/T027); its effect is applied through the repository above",
-	"dlr-unknown-request-id":                 "US2 receipt ingestion (T024/T027)",
-	"dlr-unknown-status-code":                "US2 receipt ingestion (T024/T027); its effect is applied through the repository above",
-	"dlr-wrong-token":                        "US2 receipt ingestion (T024/T027)",
-	"webhook-redirect-not-followed":          "US2 outbound callbacks (T025/T028)",
-	"webhook-retry-on-500":                   "US2 outbound callbacks (T025/T028)",
-	"webhook-signed":                         "US2 outbound callbacks (T025/T028)",
-	"webhook-unsigned":                       "US2 outbound callbacks (T025/T028)",
-}
-
 // observedOnly are captured observations without a response of their own;
 // the scenario checks them where they occur.
-var observedOnly = map[string]bool{"jwt-claims": true, "login-log-rows": true, "send-rejections-persisted": true}
+var observedOnly = map[string]bool{"jwt-claims": true, "login-log-rows": true, "send-rejections-persisted": true,
+	"dlr-100-concurrent-same-status": true, "webhook-signed": true, "webhook-unsigned": true, "webhook-retry-on-500": true,
+	"webhook-redirect-not-followed": true}
 
 type expectation struct {
 	status      int
@@ -696,7 +690,7 @@ func (r *replay) compare(t *testing.T) {
 		t.Fatalf("manifest: %v", err)
 	}
 	for _, c := range manifest.Cases {
-		if deferred[c] != "" || observedOnly[c] {
+		if observedOnly[c] {
 			continue
 		}
 		if c == "list-filter-status-zero" {
@@ -727,8 +721,11 @@ func (r *replay) compare(t *testing.T) {
 			t.Errorf("%s: documented change for a case that is not captured", c)
 		}
 	}
-	t.Logf("%d captured cases: %d replayed (%d with documented V4 changes), %d checked as observations, %d deferred",
-		len(manifest.Cases), len(r.got), len(v4Changes)+1, len(observedOnly), len(deferred))
+	if len(r.got)+len(observedOnly) != len(manifest.Cases) {
+		t.Errorf("%d replayed + %d observed != %d captured cases", len(r.got), len(observedOnly), len(manifest.Cases))
+	}
+	t.Logf("%d captured cases: %d replayed (%d with documented V4 changes), %d checked as observations",
+		len(manifest.Cases), len(r.got), len(v4Changes)+1, len(observedOnly))
 }
 
 // compareStatusZero: the early-receipt message is terminal in V4, so the

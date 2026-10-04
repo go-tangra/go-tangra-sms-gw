@@ -71,3 +71,19 @@ func TestConcurrentAllow(t *testing.T) {
 		t.Fatalf("%d allowed", allowed)
 	}
 }
+
+func TestAvailableDoesNotTake(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	l := New(1, 2, 0)
+	l.now = func() time.Time { return now }
+	for range 5 {
+		if !l.Available("ip") {
+			t.Fatal("peek consumed a token")
+		}
+	}
+	l.Allow("ip")
+	l.Allow("ip")
+	if l.Available("ip") {
+		t.Fatal("empty bucket reported available")
+	}
+}
