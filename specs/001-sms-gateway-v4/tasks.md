@@ -20,14 +20,14 @@ Establish V4 module and capture the source contract before changing behavior.
 
 Provide shared trusted identity, tenant persistence and lifecycle. Checkpoint: seeded fixture repositories and protected management routing work before story implementation.
 
-- [ ] T006 Implement validated Freya configuration and legacy environment mapping in internal/config/config.go, internal/config/validate.go and deploy/dev.yaml, including separate listeners and secrets/identity references
-- [ ] T007 Create transactional tenant-scoped sms_* schema, reference constraints, actor distinction, revocation/audit/import tables and sequence handling in internal/store/migrations/001_initial.sql and internal/store/store.go; follow data-model.md
-- [ ] T008 Implement scoped repository interfaces and pgx transaction helpers for all entities in internal/repo/repo.go and internal/repo/postgres.go; enforce tenant predicates, ownership and safe list filters at the boundary
-- [ ] T009 [P] Implement deployment-key credential sealing and response/log redaction in internal/sealed/sealed.go and internal/sealed/redact.go using the local notification V4 pattern
-- [ ] T010 [P] Implement verified operator identity/permission checks with auth SDK and trusted tenant context in internal/authz/authz.go; reject forged legacy role/tenant headers and fail closed on verification failure
-- [ ] T011 Create Freya lifecycle, pooled SDK clients, health/readiness and cleanup wiring in internal/app/app.go and cmd/smsgwsvc/main.go; install mesh deny-by-default gateway policy in deploy/policy.yaml
-- [ ] T012 Create sanitized audit/login events and low-cardinality observability adapters in internal/audit/audit.go and internal/metrics/metrics.go; prohibit token/secret/body logging
-- [ ] T013 Build isolated seeded SQL fixtures and mock carrier/callback test harness in tests/integration/harness_test.go and tests/fixtures/seed.sql; add real PostgreSQL cross-tenant relationship/transaction checks in internal/repo/postgres_test.go
+- [X] T006 Implement validated Freya configuration and legacy environment mapping in internal/config/config.go, internal/config/validate.go and deploy/dev.yaml, including separate listeners and secrets/identity references
+- [X] T007 Create transactional tenant-scoped sms_* schema, reference constraints, actor distinction, revocation/audit/import tables and sequence handling in internal/store/migrations/001_initial.sql and internal/store/store.go; follow data-model.md
+- [X] T008 Implement scoped repository interfaces and pgx transaction helpers for all entities in internal/repo/repo.go and internal/repo/postgres.go; enforce tenant predicates, ownership and safe list filters at the boundary
+- [X] T009 [P] Implement deployment-key credential sealing and response/log redaction in internal/sealed/sealed.go and internal/sealed/redact.go using the local notification V4 pattern
+- [X] T010 [P] Implement verified operator identity/permission checks with auth SDK and trusted tenant context in internal/authz/authz.go; reject forged legacy role/tenant headers and fail closed on verification failure
+- [X] T011 Create Freya lifecycle, pooled SDK clients, health/readiness and cleanup wiring in internal/app/app.go and cmd/smsgwsvc/main.go; install mesh deny-by-default gateway policy in deploy/policy.yaml
+- [X] T012 Create sanitized audit/login events and low-cardinality observability adapters in internal/audit/audit.go and internal/metrics/metrics.go; prohibit token/secret/body logging
+- [X] T013 Build isolated seeded SQL fixtures and mock carrier/callback test harness in tests/integration/harness_test.go and tests/fixtures/seed.sql; add real PostgreSQL cross-tenant relationship/transaction checks in internal/repo/postgres_test.go
 
 ## Phase 3: User Story 1 — Preserve public SMS integrations (Priority: P1) — MVP
 
@@ -162,3 +162,5 @@ Complete setup and foundation, then deliver US1 as a public mock-carrier MVP and
 ## Implementation progress — 2026-10-04
 
 - Phase 1 complete. T001: `scripts/capture_legacy_runtime.py` recorded 154 database-backed cases from the running legacy service (isolated PostgreSQL, legacy mock carrier, in-process failure carrier and callback receiver) into `tests/fixtures/legacy/runtime/`; findings and deliberate V4 changes are in `docs/compatibility.md`.
+- Phase 2 complete (T006–T013): config with legacy env mapping (`internal/config`), tenant schema with RLS and composite FKs (`internal/store/migrations/001_initial.sql`), repositories (`internal/repo`), sealing/redaction (`internal/sealed`), operator authz (`internal/authz`), Freya lifecycle/admin/readiness (`internal/app`, `cmd/smsgwsvc`, `deploy/policy.yaml`), audit and metrics (`internal/audit`, `internal/metrics`), seeded harness (`tests/fixtures/seed.sql`, `tests/integration`). `go vet` and `go test -race` pass with and without `-tags integration` (integration suites skip without docker or `SMSGW_TEST_PG_DSN`).
+- Left for later phases by design: LCM network enrollment wiring (T047; `enroll.enabled` currently fails closed in `freya.New`), public listener handlers (US1 attaches them with `App.AddServer`), portal/auth registration (T037), management routes (US3 mounts them on `App.Management`).

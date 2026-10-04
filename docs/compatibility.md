@@ -46,3 +46,17 @@ Legacy defects and exposures that V4 deliberately changes (each needs its own V4
 - `/metrics` and the embedded admin UI are served unauthenticated on the public listener. V4 keeps both off the public listener.
 - Unbounded `pageSize`. V4 caps page size; the cap is a documented security change.
 - Concurrent duplicate receipts were all counted in this run (100/100), but the legacy read-then-increment is not atomic. V4 makes the increment a single atomic upsert.
+
+## V4 persistence and configuration decisions (Phase 2)
+
+- Every `sms_*` row carries `tenant_id`; references are composite `(tenant_id, id)` foreign keys, so a provider, template, API client or message of another tenant cannot be referenced. Row-level security (application role without BYPASSRLS) backs the explicit predicates. Hermes login and token subjects, and carrier receipts, resolve their tenant from the stored account or message (named cross-tenant lookups).
+- Usernames stay globally unique (Hermes login carries no tenant) and keep the legacy `^[A-Za-z0-9_]{4,50}$` rule; numeric ids keep the legacy uint32 range and global uniqueness so imported ids and public `sub`/`providerId` values survive.
+- Legacy zero references become SQL NULL: block `provider_id` 0 (all providers of the tenant) and message `template_id` 0.
+- A message records exactly one actor: a Hermes API client (`api_client_id`) or a platform operator (`platform_actor`). Legacy admin-path sends (owner 0) need an explicit platform actor on import.
+- Deleting a provider, template or API client that messages (or blocks) reference is refused (`ErrReference`, 409 in the management API) instead of the legacy dangling reference; retention deletes a message and its receipts together.
+- `API_ADMIN` remains storable data; its public read-all privilege is not carried over (see above).
+- Provider configuration and callback secrets are sealed with the deployment KEK, bound to tenant and row; raw carrier evidence passes through `sealed.Evidence` before storage or display.
+- Message lists are bounded: default page 50 (legacy), maximum `query.max_page_size` (500 by default) instead of unbounded.
+- Logout revocations persist in `sms_token_revocation` (jti and expiry only, never the token) and are purged after expiry.
+- Legacy `SMS_GW_*` environment variables still configure the service; secrets become references, obsolete variables (legacy mTLS/registration) are reported and ignored, and an unparseable value now stops startup instead of silently using the default.
+- Management requests are authorized only by the verified operator token and auth permission checks; legacy `x-md-global-*` identity headers are refused with 403.
