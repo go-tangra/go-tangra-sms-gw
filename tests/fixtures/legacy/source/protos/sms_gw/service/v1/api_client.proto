@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package sms_gw.service.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "sms_gw/service/v1/common.proto";
+
+// ApiClientService — admin CRUD for SMS API clients. API clients are
+// consumers of the public /hermes/v1/sms* HTTP API; they authenticate
+// with the havi-format JWT issued by AuthenticationService.Login.
+//
+// These clients are SEPARATE from tangra portal users — they live in
+// this module's database and are managed by tangra admins (who in turn
+// are authorized via the standard tangra RBAC on the gRPC admin path).
+service ApiClientService {
+  rpc List(PagingRequest) returns (ListApiClientResponse) {
+    option (google.api.http) = {get: "/v1/api_clients"};
+  }
+  rpc Get(GetApiClientRequest) returns (GetApiClientResponse) {
+    option (google.api.http) = {get: "/v1/api_clients/{id}"};
+  }
+  rpc Create(CreateApiClientRequest) returns (ApiClient) {
+    option (google.api.http) = {
+      post: "/v1/api_clients"
+      body: "*"
+    };
+  }
+  rpc Update(UpdateApiClientRequest) returns (ApiClient) {
+    option (google.api.http) = {
+      put: "/v1/api_clients/{id}"
+      body: "*"
+    };
+  }
+  rpc Delete(DeleteApiClientRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/api_clients/{id}"};
+  }
+  // Issues a brand new password for an existing client. Returns the
+  // plaintext password in the response — admins must capture it; the
+  // server only stores the bcrypt hash.
+  rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse) {
+    option (google.api.http) = {
+      post: "/v1/api_clients/{id}/reset_password"
+      body: "*"
+    };
+  }
+}
+
+message ApiClient {
+  uint32 id = 1;
+  string username = 2;
+  string email = 3;
+  // "API_CLIENT" (can send + read own) or "API_VIEWER" (read-only).
+  string authority = 4;
+  // "ON" or "OFF". OFF clients cannot log in.
+  string status = 5;
+  // Optional: when set, the gateway POSTs a JSON DLR payload here every
+  // time a delivery receipt arrives for one of this client's messages.
+  // Empty disables push (clients still poll /hermes/v1/sms/dlr/{id}).
+  string dlr_callback_url = 6 [json_name = "dlrCallbackUrl"];
+  // The dlr_callback_secret value is NEVER returned in API responses;
+  // this field is write-only via Update + ResetCallbackSecret.
+  optional google.protobuf.Timestamp last_login_time = 10 [json_name = "lastLoginTime"];
+  string last_login_ip = 11 [json_name = "lastLoginIp"];
+  optional google.protobuf.Timestamp create_time = 30 [json_name = "createTime"];
+  optional google.protobuf.Timestamp update_time = 31 [json_name = "updateTime"];
+}
+
+message ListApiClientResponse {
+  repeated ApiClient items = 1;
+  int32 total = 2;
+}
+
+message GetApiClientRequest {
+  uint32 id = 1;
+}
+
+message GetApiClientResponse {
+  ApiClient data = 1;
+}
+
+message CreateApiClientRequest {
+  string username = 1;
+  string email = 2;
+  string password = 3;
+  string authority = 4;
+  string status = 5;
+}
+
+message UpdateApiClientRequest {
+  uint32 id = 1;
+  optional string email = 2;
+  optional string authority = 3;
+  optional string status = 4;
+  optional string dlr_callback_url = 5;
+  // When non-empty, replaces the HMAC secret used to sign outbound DLR
+  // webhook bodies. Set to "-" to clear the secret (signing disabled).
+  optional string dlr_callback_secret = 6;
+}
+
+message DeleteApiClientRequest {
+  uint32 id = 1;
+}
+
+message ResetPasswordRequest {
+  uint32 id = 1;
+  // Optional. If empty, server generates a 32-char random password.
+  string new_password = 2;
+}
+
+message ResetPasswordResponse {
+  string password = 1;
+}

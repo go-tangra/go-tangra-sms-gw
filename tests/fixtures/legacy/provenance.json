@@ -1,0 +1,70 @@
+{
+  "source": "../go-tangra-sms-gw",
+  "capture": "source contracts; runtime capture pending isolated database",
+  "files": [
+    {
+      "path": "protos/sms_gw/service/v1/sms.proto",
+      "sha256": "5da435854ed75c980df8f27b0fec7246c0278b5c5f542106d88a1a1e970f3935"
+    },
+    {
+      "path": "protos/sms_gw/service/v1/block.proto",
+      "sha256": "81244124fc2e09cde2fc3d9e7434427e17539fcddd8fdbf25c5fe258b5583fae"
+    },
+    {
+      "path": "protos/sms_gw/service/v1/provider.proto",
+      "sha256": "d455790d885826e13cb4b079edfce86ac9162865116a031e7457c578046d19fd"
+    },
+    {
+      "path": "protos/sms_gw/service/v1/dashboard.proto",
+      "sha256": "5fcf2dd3f5bb595682527fdb99cf3580070cd075b10f0a2e7bddb54099239937"
+    },
+    {
+      "path": "protos/sms_gw/service/v1/api_client.proto",
+      "sha256": "aa46513749796dfd70f072d6a8814e4c1c3c7c58b5cc79b674cf471ae4d1567e"
+    },
+    {
+      "path": "protos/sms_gw/service/v1/sms_gw_error.proto",
+      "sha256": "a916060f0dadb6b62f2627ce62b82a38b1c62ca55dc0e969ac95dd17cea0b611"
+    },
+    {
+      "path": "protos/sms_gw/service/v1/common.proto",
+      "sha256": "8ef515710d02eeca7287aad38056f074824c886bab86bcbab3b27ba419acfd51"
+    },
+    {
+      "path": "protos/sms_gw/service/v1/template.proto",
+      "sha256": "543a7cbf287fa34e37fd73574ea786b0fae480602fa7d8931f0e03b428712917"
+    },
+    {
+      "path": "protos/sms_gw/service/v1/authentication.proto",
+      "sha256": "7e1c38966124d19d1ca675e9b28b44a4931a0d5537c6f10566433808326a7f31"
+    },
+    {
+      "path": "internal/server/http.go",
+      "sha256": "de0e946ee04ec83031f8ad10683faf89c33649be205331949f4ec1d778027297"
+    },
+    {
+      "path": "internal/server/dlr_handler.go",
+      "sha256": "824ba9ea4d88ac9c7316ea68ac8ed16ff55f25f9451805a4be9a14f10f7a9c3b"
+    },
+    {
+      "path": "internal/service/authn_service.go",
+      "sha256": "07dc08845f58abaf702627b497ccf53a7c9ffda229166f896989936b6975600d"
+    },
+    {
+      "path": "internal/service/sms_service.go",
+      "sha256": "2f473d3a870c08db970013ac414087062184502206dd64a3cc6cf556032bd203"
+    },
+    {
+      "path": "internal/auth/jwt.go",
+      "sha256": "2816fd4ba9bada0dfafb8f7a8c1d0cbd139828bee631233c9f42c298a25cfad6"
+    },
+    {
+      "path": "internal/auth/denylist.go",
+      "sha256": "e1d7b8a7402eb1af8be4c0b74cf63aa02ea4306e0ed5ae3fd4d343e25f25c533"
+    },
+    {
+      "path": "internal/webhook/dispatcher.go",
+      "sha256": "97e454fdf1e59dc7dec6cc45335fd44656286c5f90b62f8a00ed8568f57e4efc"
+    }
+  ]
+}

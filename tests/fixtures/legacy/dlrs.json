@@ -1,0 +1,5 @@
+{
+  "body": "{\"items\":[{\"id\":\"1\",\"requestId\":\"00000000-0000-0000-0000-000000000001\",\"channel\":\"\",\"sid\":0,\"messageStatus\":1,\"to\":\"359888123456\",\"from\":\"\",\"timestamp\":\"0\",\"remoteAddrerss\":\"192.0.2.1\",\"statusText\":\"\",\"partsReceived\":2}],\"total\":1}",
+  "content_type": "application/json",
+  "status": 200
+}

@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package sms_gw.service.v1;
+
+// PagingRequest mirrors havi.common.pagination.v1.PagingRequest field-for-field
+// so client code that constructed the legacy paging shape keeps working.
+message PagingRequest {
+  optional int32 page = 1 [json_name = "page"];
+  optional int32 page_size = 2 [json_name = "pageSize"];
+  optional string query = 3 [json_name = "query"];
+  optional string or_query = 4 [json_name = "or"];
+  repeated string order_by = 5 [json_name = "orderBy"];
+  optional bool no_paging = 6 [json_name = "nopaging"];
+}
+
+// ObjectType discriminates the kind of channel a Provider/Template targets.
+// Mirrors havi.hermes.v1.ObjectType but only the SMS variants are honored
+// by this module.
+enum ObjectType {
+  OBJECT_TYPE_UNSPECIFIED = 0;
+  OBJECT_TYPE_SMS = 1;
+  OBJECT_TYPE_VIBER = 2;
+}

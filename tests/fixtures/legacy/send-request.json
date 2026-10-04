@@ -1,0 +1,5 @@
+{
+  "body": "{\"to\":\"359888123456\",\"sms\":{\"from\":\"Fixture\",\"encoding\":\"gsm-03-38\",\"concatenate\":1,\"validity\":null,\"mccmnc\":0},\"properties\":{\"Name\":\"fixture\"},\"providerId\":3,\"templateId\":4}",
+  "content_type": "application/json",
+  "status": 200
+}

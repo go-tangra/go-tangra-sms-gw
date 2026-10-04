@@ -1,0 +1,5 @@
+{
+  "body": "{\"code\":502,\"reason\":\"THIRD_PARTY_SERVICE_INVALID_CODE\",\"message\":\"fixture\",\"metadata\":{}}",
+  "content_type": "application/json",
+  "status": 502
+}

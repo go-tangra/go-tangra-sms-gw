@@ -1,0 +1,5 @@
+{
+  "body": "{\"code\":429,\"reason\":\"TOO_MANY_REQUESTS\",\"message\":\"fixture\",\"metadata\":{}}",
+  "content_type": "application/json",
+  "status": 429
+}

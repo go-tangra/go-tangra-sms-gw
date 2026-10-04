@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package sms_gw.service.v1;
+
+import "errors/errors.proto";
+
+// SmsGwErrorReason — error codes returned by the SMS gateway. The numeric
+// HTTP status mappings mirror havi/hermes/v1/errors.proto for the small
+// subset that public clients can observe (so legacy error-handling code on
+// the client side keeps working).
+enum SmsGwErrorReason {
+  option (errors.default_code) = 500;
+
+  SMS_GW_ERROR_UNSPECIFIED = 0 [(errors.code) = 500];
+
+  // 4xx
+  BAD_REQUEST = 1 [(errors.code) = 400];
+  UNAUTHORIZED = 2 [(errors.code) = 401];
+  FORBIDDEN = 3 [(errors.code) = 403];
+  RECORD_NOT_FOUND = 4 [(errors.code) = 404];
+  RECORD_ALREADY_EXISTS = 5 [(errors.code) = 409];
+  INVALID_PARAMETER = 6 [(errors.code) = 400];
+  TOO_MANY_REQUESTS = 7 [(errors.code) = 429];
+
+  // 5xx
+  INTERNAL_ERROR = 100 [(errors.code) = 500];
+  THIRD_PARTY_SERVICE_INTERNAL_ERROR = 101 [(errors.code) = 502];
+  THIRD_PARTY_SERVICE_INVALID_CODE = 102 [(errors.code) = 502];
+  DB_UNAVAILABLE = 103 [(errors.code) = 503];
+}

@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package sms_gw.service.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+// SmsGwDashboardService - thin proxy in front of a Prometheus server.
+//
+// We do NOT model individual panels at the proto level: the frontend
+// already knows what charts it wants, and the metric set evolves with
+// each release. Exposing PromQL pass-through gives us:
+//
+//   - the same set of metrics every Grafana dashboard would have,
+//   - no proto changes when adding/removing panels,
+//   - the auth/mTLS path stays uniform with the rest of the platform.
+//
+// Both calls fan out to /api/v1/query{,_range} on the configured
+// Prometheus instance. Replies are normalised to a tabular form so the
+// frontend doesn't have to recreate Prometheus's matrix/vector schema
+// on the wire.
+service SmsGwDashboardService {
+  // Single point-in-time evaluation. Mirrors /api/v1/query.
+  rpc InstantQuery(InstantQueryRequest) returns (InstantQueryResponse) {
+    option (google.api.http) = {
+      get: "/v1/dashboard/query"
+    };
+  }
+
+  // Time-windowed evaluation. Mirrors /api/v1/query_range.
+  rpc RangeQuery(RangeQueryRequest) returns (RangeQueryResponse) {
+    option (google.api.http) = {
+      get: "/v1/dashboard/query_range"
+    };
+  }
+}
+
+message InstantQueryRequest {
+  string query = 1 [(buf.validate.field).string.min_len = 1];
+  // Optional evaluation timestamp. Default: server "now".
+  google.protobuf.Timestamp time = 2;
+}
+
+message InstantQueryResponse {
+  // Each series in the result vector. For scalar/string results the
+  // slice is single-element with empty labels.
+  repeated InstantSample series = 1;
+}
+
+message InstantSample {
+  // Label set, e.g. {provider: "voicecom", outcome: "ok"}.
+  map<string, string> labels = 1;
+  // Sample timestamp.
+  google.protobuf.Timestamp timestamp = 2;
+  // NaN is replaced with 0 and `has_value=false` to keep the proto JSON
+  // wire form stable; the frontend should treat !has_value as "missing".
+  double value = 3;
+  bool has_value = 4;
+}
+
+message RangeQueryRequest {
+  string query = 1 [(buf.validate.field).string.min_len = 1];
+  google.protobuf.Timestamp start = 2 [(buf.validate.field).required = true];
+  google.protobuf.Timestamp end = 3 [(buf.validate.field).required = true];
+  // Step in seconds. Required by Prometheus, validated > 0.
+  int64 step_seconds = 4 [(buf.validate.field).int64.gt = 0];
+}
+
+message RangeQueryResponse {
+  repeated RangeSeries series = 1;
+}
+
+message RangeSeries {
+  map<string, string> labels = 1;
+  // Parallel arrays so the wire form is compact and the frontend can
+  // feed them straight into ECharts without a per-point object alloc.
+  repeated google.protobuf.Timestamp timestamps = 2;
+  repeated double values = 3;
+}

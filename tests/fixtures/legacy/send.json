@@ -1,0 +1,5 @@
+{
+  "body": "{\"data\":{\"id\":\"00000000-0000-0000-0000-000000000001\",\"owner\":7,\"sid\":0,\"to\":\"359888123456\",\"priority\":0,\"defer\":\"\",\"sms\":null,\"text\":\"Hello fixture\",\"status\":4294967295,\"statusMessage\":\"\",\"rawResponse\":\"\",\"rawRequest\":\"\",\"userName\":\"\",\"providerId\":3,\"providerName\":\"\",\"apiClientUsername\":\"\"},\"endpointResponse\":{\"returnCode\":0,\"returnMessage\":\"OK\",\"channels\":{\"sms\":{\"sendOrder\":11,\"messageParts\":1},\"viber\":null}}}",
+  "content_type": "application/json",
+  "status": 200
+}

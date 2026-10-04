@@ -1,0 +1,5 @@
+{
+  "body": "{\"user\":{\"id\":7,\"username\":\"fixture_client\",\"email\":\"\",\"authority\":\"API_CLIENT\"},\"abilities\":[{\"action\":\"create\",\"subject\":\"sms\"},{\"action\":\"list\",\"subject\":\"sms\"},{\"action\":\"get\",\"subject\":\"sms\"},{\"action\":\"get\",\"subject\":\"dlr\"}]}",
+  "content_type": "application/json",
+  "status": 200
+}

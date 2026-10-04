@@ -1,0 +1,5 @@
+{
+  "body": "{\"data\":{\"id\":\"00000000-0000-0000-0000-000000000001\",\"owner\":0,\"sid\":0,\"to\":\"18446744073709551615\",\"priority\":0,\"defer\":\"\",\"sms\":null,\"text\":\"\",\"status\":1,\"statusMessage\":\"\",\"rawResponse\":\"\",\"rawRequest\":\"\",\"userName\":\"\",\"providerId\":0,\"providerName\":\"\",\"apiClientUsername\":\"\"}}",
+  "content_type": "application/json",
+  "status": 200
+}

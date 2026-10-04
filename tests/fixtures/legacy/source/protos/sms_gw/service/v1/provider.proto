@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package sms_gw.service.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "sms_gw/service/v1/common.proto";
+
+// ProviderService — admin CRUD for third-party SMS providers. Mounted on
+// the admin gRPC server (mTLS), accessed by the tangra portal admin UI.
+service ProviderService {
+  rpc List(PagingRequest) returns (ListProviderResponse) {
+    option (google.api.http) = {get: "/v1/providers"};
+  }
+  rpc Get(GetProviderRequest) returns (GetProviderResponse) {
+    option (google.api.http) = {get: "/v1/providers/{id}"};
+  }
+  rpc Create(CreateProviderRequest) returns (Provider) {
+    option (google.api.http) = {
+      post: "/v1/providers"
+      body: "*"
+    };
+  }
+  rpc Update(UpdateProviderRequest) returns (Provider) {
+    option (google.api.http) = {
+      put: "/v1/providers/{id}"
+      body: "*"
+    };
+  }
+  rpc Delete(DeleteProviderRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/providers/{id}"};
+  }
+
+  // ListProviderTypes returns the registered provider types and the
+  // typed config schema for each — consumed by the admin UI to render
+  // a proper form (required vs optional, secret vs public, dropdowns,
+  // help text) instead of asking operators to hand-edit raw JSON.
+  rpc ListProviderTypes(google.protobuf.Empty) returns (ListProviderTypesResponse) {
+    option (google.api.http) = {get: "/v1/provider_types"};
+  }
+}
+
+// ProviderTypeMeta describes one registered provider implementation
+// (e.g. "voicecom") and the configurable knobs it accepts. The
+// `fields` list MUST be honored in display order — that order
+// reflects the provider's documented onboarding flow.
+message ProviderTypeMeta {
+  // Discriminator used as Provider.type. Stable identifier.
+  string type = 1;
+  // Human-friendly display name.
+  string label = 2;
+  // One-paragraph explanation shown near the type picker.
+  string description = 3;
+  // Ordered list of config knobs.
+  repeated ProviderField fields = 4;
+}
+
+// ProviderField describes one config map entry for the admin UI.
+message ProviderField {
+  // Map key (e.g. "url", "sid").
+  string key = 1;
+  // Display label.
+  string label = 2;
+  // Widget hint: "string" | "secret" | "url" | "int" | "select".
+  string type = 3;
+  // True when the admin form must validate as non-empty before submit.
+  bool required = 4;
+  // Pre-fill value for new providers.
+  string default = 5;
+  // Greyed-out hint inside the input.
+  string placeholder = 6;
+  // One-line guidance shown beneath the input.
+  string help = 7;
+  // Allowed values for "select" fields. Ignored otherwise.
+  repeated string options = 8;
+}
+
+message ListProviderTypesResponse {
+  repeated ProviderTypeMeta types = 1;
+}
+
+message Provider {
+  uint32 id = 1;
+  string name = 2;
+  // Concrete provider implementation key — must match a registered factory
+  // in internal/provider/registry.go (e.g. "voicecom").
+  string type = 3;
+  ObjectType object_type = 4;
+  // Free-form key/value config consumed by the provider implementation.
+  // Voicecom expects: url, sid, encoding, priority, concatenate, token,
+  // callback_url, webhook_before, webhook_after.
+  map<string, string> config = 5;
+  // "ON" or "OFF". OFF providers reject Send requests.
+  string status = 6;
+  // Days to keep messages created via this provider. 0 = never delete.
+  // The housekeeping task purges sms_message + sms_dlr rows older than
+  // (now - retention_days) on its configured cadence.
+  uint32 retention_days = 7;
+  optional google.protobuf.Timestamp create_time = 30 [json_name = "createTime"];
+  optional google.protobuf.Timestamp update_time = 31 [json_name = "updateTime"];
+}
+
+message ListProviderResponse {
+  repeated Provider items = 1;
+  int32 total = 2;
+}
+
+message GetProviderRequest {
+  uint32 id = 1;
+}
+
+message GetProviderResponse {
+  Provider data = 1;
+}
+
+message CreateProviderRequest {
+  string name = 1;
+  string type = 2;
+  ObjectType object_type = 3;
+  map<string, string> config = 4;
+  string status = 5;
+  // Days to keep messages; 0 = never delete.
+  uint32 retention_days = 6;
+}
+
+message UpdateProviderRequest {
+  uint32 id = 1;
+  optional string name = 2;
+  optional string type = 3;
+  optional ObjectType object_type = 4;
+  map<string, string> config = 5;
+  optional string status = 6;
+  // Days to keep messages; 0 = never delete. Optional so PATCH-style
+  // updates that omit the field don't reset retention.
+  optional uint32 retention_days = 7;
+}
+
+message DeleteProviderRequest {
+  uint32 id = 1;
+}

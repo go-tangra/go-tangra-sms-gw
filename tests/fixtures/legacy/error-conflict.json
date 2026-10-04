@@ -1,0 +1,5 @@
+{
+  "body": "{\"code\":409,\"reason\":\"RECORD_ALREADY_EXISTS\",\"message\":\"fixture\",\"metadata\":{}}",
+  "content_type": "application/json",
+  "status": 409
+}

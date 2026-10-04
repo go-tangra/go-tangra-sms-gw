@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package sms_gw.service.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "sms_gw/service/v1/common.proto";
+
+// BlockService — admin CRUD for the outbound block list. Send-time
+// enforcement happens automatically inside SmsService.Send; this surface
+// is for managing entries.
+service BlockService {
+  rpc List(PagingRequest) returns (ListBlockResponse) {
+    option (google.api.http) = {get: "/v1/blocks"};
+  }
+  rpc Get(GetBlockRequest) returns (GetBlockResponse) {
+    option (google.api.http) = {get: "/v1/blocks/{id}"};
+  }
+  rpc Create(CreateBlockRequest) returns (Block) {
+    option (google.api.http) = {
+      post: "/v1/blocks"
+      body: "*"
+    };
+  }
+  rpc Update(UpdateBlockRequest) returns (Block) {
+    option (google.api.http) = {
+      put: "/v1/blocks/{id}"
+      body: "*"
+    };
+  }
+  rpc Delete(DeleteBlockRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/blocks/{id}"};
+  }
+}
+
+message Block {
+  uint32 id = 1;
+  string recipient = 2;
+  string description = 3;
+  uint32 provider_id = 4 [json_name = "providerId"];
+  ObjectType block_type = 5 [json_name = "blockType"];
+  string status = 6;
+  optional google.protobuf.Timestamp create_time = 30 [json_name = "createTime"];
+  optional google.protobuf.Timestamp update_time = 31 [json_name = "updateTime"];
+}
+
+message ListBlockResponse {
+  repeated Block items = 1;
+  int32 total = 2;
+}
+
+message GetBlockRequest {
+  uint32 id = 1;
+}
+
+message GetBlockResponse {
+  Block data = 1;
+}
+
+message CreateBlockRequest {
+  string recipient = 1;
+  string description = 2;
+  uint32 provider_id = 3;
+  ObjectType block_type = 4;
+  string status = 5;
+}
+
+message UpdateBlockRequest {
+  uint32 id = 1;
+  optional string recipient = 2;
+  optional string description = 3;
+  optional uint32 provider_id = 4;
+  optional ObjectType block_type = 5;
+  optional string status = 6;
+}
+
+message DeleteBlockRequest {
+  uint32 id = 1;
+}

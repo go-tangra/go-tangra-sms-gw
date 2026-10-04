@@ -1,0 +1,5 @@
+{
+  "body": "{\"access_token\":\"fixture-access\",\"refresh_token\":\"fixture-refresh\",\"token_type\":\"Bearer\",\"expires_in\":\"7200\"}",
+  "content_type": "application/json",
+  "status": 200
+}

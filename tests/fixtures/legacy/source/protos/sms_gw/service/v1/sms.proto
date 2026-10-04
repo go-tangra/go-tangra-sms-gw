@@ -1,0 +1,188 @@
+syntax = "proto3";
+
+package sms_gw.service.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/protobuf/timestamp.proto";
+import "sms_gw/service/v1/common.proto";
+
+// SmsService — drop-in replacement for havi.hermes.v1.SmsService. The HTTP
+// paths under /hermes/v1/sms* must remain identical so existing client SDKs
+// that target hermes work against this module unchanged.
+service SmsService {
+  // Send an SMS via a configured provider.
+  rpc Send(SendSmsRequest) returns (SendSmsResponse) {
+    option (google.api.http) = {
+      post: "/hermes/v1/sms"
+      body: "*"
+      additional_bindings {
+        post: "/v1/sms"
+        body: "*"
+      }
+    };
+  }
+
+  // List previously-sent SMS messages (paginated).
+  rpc List(PagingRequest) returns (ListSmsResponse) {
+    option (google.api.http) = {
+      get: "/hermes/v1/sms"
+      additional_bindings {get: "/v1/sms"}
+    };
+  }
+
+  // Fetch one SMS message by UUID.
+  rpc Get(GetSmsMessageRequest) returns (GetSmsMessageResponse) {
+    option (google.api.http) = {
+      get: "/hermes/v1/sms/{id}"
+      additional_bindings {get: "/v1/sms/{id}"}
+    };
+  }
+
+  // Inbound DLR webhook hit by the third-party provider. The HTTP wrapper
+  // for this RPC always returns 200 with body "DLR_OK" regardless of
+  // outcome — providers retry aggressively on non-2xx responses.
+  rpc Dlr(DlrRequest) returns (DlrResponse) {
+    option (google.api.http) = {get: "/hermes/v1/sms/dlr"};
+  }
+
+  // List DLRs for a given SMS message UUID.
+  rpc Dlrs(ListDlrRequest) returns (ListDlrResponse) {
+    option (google.api.http) = {
+      get: "/hermes/v1/sms/dlr/{id}"
+      additional_bindings {get: "/v1/sms/dlr/{id}"}
+    };
+  }
+}
+
+// ListDlrRequest — id is the SMS message UUID.
+message ListDlrRequest {
+  string id = 1;
+}
+
+message ListDlrResponse {
+  repeated Dlr items = 1;
+  int32 total = 2;
+}
+
+message Dlr {
+  uint64 id = 1;
+  string request_id = 2;
+  string channel = 3;
+  int32 sid = 4;
+  uint32 message_status = 5;
+  uint64 to = 6;
+  string from = 7;
+  uint64 timestamp = 8;
+  // Field name retains the legacy typo from havi to keep wire compatibility.
+  string remote_addrerss = 9;
+  string status_text = 10;
+  // parts_received >= 1; values >1 mean the carrier reported the same
+  // (message_id, status) for multiple SMS parts (concatenated message).
+  uint32 parts_received = 11 [json_name = "partsReceived"];
+  optional google.protobuf.Timestamp create_time = 30 [json_name = "createTime"];
+  optional google.protobuf.Timestamp update_time = 31 [json_name = "updateTime"];
+}
+
+message DlrResponse {}
+
+// DlrRequest — query parameters bound from the provider's GET to /dlr.
+message DlrRequest {
+  string request_id = 1 [(google.api.field_behavior) = REQUIRED];
+  string channel = 2;
+  int32 sid = 3;
+  uint32 message_status = 4;
+  uint64 to = 5;
+  string from = 6;
+  uint64 timestamp = 7;
+}
+
+message SendSmsResponse {
+  Message data = 1;
+  VoicecomResponse endpoint_response = 2;
+}
+
+// VoicecomResponse mirrors the Voicecom vendor's response envelope. Field
+// names and numbers are preserved so client SDKs that destructure the
+// reply continue to work even when the underlying provider changes — for
+// non-Voicecom providers we synthesize this envelope on the way out.
+message VoicecomResponse {
+  int32 return_code = 1;
+  string return_message = 2;
+  Channels channels = 3;
+}
+
+message Channels {
+  SmsChannel sms = 1;
+  ViberChannel viber = 2;
+}
+
+message ViberChannel {
+  uint32 send_order = 1;
+}
+
+message SmsChannel {
+  uint32 send_order = 1;
+  uint32 message_parts = 2;
+}
+
+message SendSmsRequest {
+  uint64 to = 2;
+  Sms sms = 6;
+  map<string, string> properties = 7;
+  uint32 provider_id = 8 [json_name = "providerId"];
+  uint32 template_id = 9 [json_name = "templateId"];
+}
+
+message GetSmsMessageRequest {
+  string id = 1;
+}
+
+message GetSmsMessageResponse {
+  Message data = 1;
+}
+
+message ListSmsResponse {
+  repeated Message items = 1;
+  int32 total = 2;
+}
+
+message Message {
+  string id = 1;
+  uint32 owner = 2;
+  uint32 sid = 3;
+  uint64 to = 4;
+  uint32 priority = 5;
+  string defer = 6;
+  Sms sms = 7;
+  string text = 8;
+  uint32 status = 9;
+  string status_message = 10;
+  string raw_response = 11;
+  string raw_request = 12;
+  string user_name = 13;
+  // provider_id/provider_name carry the carrier the message was routed
+  // through. provider_name is denormalized at read time so the admin
+  // table can render it without a second round trip; it is empty if the
+  // provider row was deleted or the join missed.
+  uint32 provider_id = 14 [json_name = "providerId"];
+  string provider_name = 15 [json_name = "providerName"];
+  // api_client_username is the api_client.username that issued the
+  // Send call (resolved from owner=api_client.id at read time).
+  string api_client_username = 16 [json_name = "apiClientUsername"];
+  optional google.protobuf.Timestamp create_time = 30 [json_name = "createTime"];
+  optional google.protobuf.Timestamp update_time = 31 [json_name = "updateTime"];
+}
+
+message Sms {
+  string from = 2;
+  string encoding = 3;
+  uint32 concatenate = 4;
+  Validity validity = 54;
+  uint32 mccmnc = 6;
+}
+
+message Validity {
+  uint32 ttl = 1;
+  string units = 2;
+}

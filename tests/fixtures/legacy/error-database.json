@@ -1,0 +1,5 @@
+{
+  "body": "{\"code\":503,\"reason\":\"DB_UNAVAILABLE\",\"message\":\"fixture\",\"metadata\":{}}",
+  "content_type": "application/json",
+  "status": 503
+}

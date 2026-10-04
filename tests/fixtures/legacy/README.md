@@ -1,0 +1,5 @@
+# Legacy contract evidence
+
+Captured from the local source checkout, which is never modified. `provenance.json` records SHA-256 fingerprints and `source/` preserves the proto and behavior definitions. `routes.json` includes all generated public routes and the raw receipt overrides.
+
+This is source evidence, not a recording of a running legacy service. The reproducible `scripts/capture_legacy.py` harness records 26 representative source HTTP codec/error cases and a signed callback golden and runs the original JWT/password tests with the race detector in an isolated temporary module. These encode representative values using the actual source protobuf definitions and Kratos codec; they are not database-backed application acceptance recordings. Full database-backed runtime capture requires an isolated PostgreSQL/legacy deployment; no PostgreSQL binaries or accessible Docker daemon are available in this session. T001 remains incomplete until that capture is performed. Never point the fixture harness at production or use real carrier credentials.

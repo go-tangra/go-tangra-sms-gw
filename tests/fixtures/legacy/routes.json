@@ -1,0 +1,78 @@
+[
+  {
+    "method": "POST",
+    "path": "/v1/sms",
+    "source": "sms_http.pb.go"
+  },
+  {
+    "method": "POST",
+    "path": "/hermes/v1/sms",
+    "source": "sms_http.pb.go"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/sms",
+    "source": "sms_http.pb.go"
+  },
+  {
+    "method": "GET",
+    "path": "/hermes/v1/sms",
+    "source": "sms_http.pb.go"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/sms/{id}",
+    "source": "sms_http.pb.go"
+  },
+  {
+    "method": "GET",
+    "path": "/hermes/v1/sms/{id}",
+    "source": "sms_http.pb.go"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/sms/dlr/{id}",
+    "source": "sms_http.pb.go"
+  },
+  {
+    "method": "GET",
+    "path": "/hermes/v1/sms/dlr/{id}",
+    "source": "sms_http.pb.go"
+  },
+  {
+    "method": "POST",
+    "path": "/hermes/v1/login",
+    "source": "authentication_http.pb.go"
+  },
+  {
+    "method": "POST",
+    "path": "/hermes/v1/logout",
+    "source": "authentication_http.pb.go"
+  },
+  {
+    "method": "POST",
+    "path": "/hermes/v1/refresh_token",
+    "source": "authentication_http.pb.go"
+  },
+  {
+    "method": "GET",
+    "path": "/hermes/v1/me",
+    "source": "authentication_http.pb.go"
+  },
+  {
+    "method": "GET",
+    "path": "/dlr",
+    "response_status": 200,
+    "response_body": "DLR_OK",
+    "auth": "dlr_token",
+    "source": "internal/server/dlr_handler.go"
+  },
+  {
+    "method": "GET",
+    "path": "/hermes/v1/sms/dlr",
+    "response_status": 200,
+    "response_body": "DLR_OK",
+    "auth": "dlr_token",
+    "source": "internal/server/dlr_handler.go"
+  }
+]

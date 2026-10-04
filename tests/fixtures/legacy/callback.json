@@ -1,0 +1,6 @@
+{
+  "body": "{\"message_id\":\"00000000-0000-0000-0000-000000000001\",\"channel\":\"sms\",\"message_status\":1,\"status_text\":\"Delivered\",\"to\":359888123456,\"from\":\"Fixture\",\"timestamp\":1700000000}",
+  "secret": "fixture-secret-not-a-production-key",
+  "signature": "16ce83b0b224f22a2ec01b1e9cb2782e0fc38fa931c3edc1487c444f093297ce",
+  "timestamp": "1700000000"
+}

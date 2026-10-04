@@ -1,0 +1,139 @@
+syntax = "proto3";
+
+package sms_gw.service.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/protobuf/empty.proto";
+
+// AuthenticationService — havi-format JWT issuance for SMS API clients.
+// Paths preserved under /hermes/v1/* so legacy client SDKs work unchanged.
+service AuthenticationService {
+  rpc Login(LoginRequest) returns (LoginResponse) {
+    option (google.api.http) = {
+      post: "/hermes/v1/login"
+      body: "*"
+    };
+  }
+
+  rpc Logout(LogoutRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/hermes/v1/logout"
+      body: "*"
+    };
+  }
+
+  rpc RefreshToken(RefreshTokenRequest) returns (LoginResponse) {
+    option (google.api.http) = {
+      post: "/hermes/v1/refresh_token"
+      body: "*"
+    };
+  }
+
+  rpc GetMe(google.protobuf.Empty) returns (GetMeResponse) {
+    option (google.api.http) = {get: "/hermes/v1/me"};
+  }
+}
+
+message GetMeResponse {
+  ApiClientPublic user = 1;
+  repeated Ability abilities = 8;
+}
+
+// ApiClientPublic — sanitized view of an API client for /me responses.
+message ApiClientPublic {
+  uint32 id = 1;
+  string username = 2;
+  string email = 3;
+  string authority = 4;
+}
+
+message Ability {
+  string action = 1;
+  string subject = 2;
+}
+
+message LogoutRequest {
+  uint32 id = 1;
+}
+
+enum GrantType {
+  password = 0;
+  client_credentials = 1;
+  refresh_token = 2;
+}
+
+enum TokenType {
+  bearer = 0;
+  mac = 1;
+}
+
+message LoginRequest {
+  string username = 1 [
+    json_name = "username",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  string password = 2 [
+    json_name = "password",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  string grant_type = 3 [
+    json_name = "grant_type",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  optional string scope = 4 [
+    json_name = "scope",
+    (google.api.field_behavior) = OPTIONAL
+  ];
+  optional string client_id = 5 [
+    json_name = "client_id",
+    (google.api.field_behavior) = OPTIONAL
+  ];
+  optional string client_secret = 6 [
+    json_name = "client_secret",
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+message LoginResponse {
+  string access_token = 1 [
+    json_name = "access_token",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  string refresh_token = 2 [
+    json_name = "refresh_token",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  string token_type = 3 [json_name = "token_type"];
+  optional int64 expires_in = 4 [
+    json_name = "expires_in",
+    (google.api.field_behavior) = OPTIONAL
+  ];
+  optional string scope = 5 [
+    json_name = "scope",
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1 [
+    json_name = "refresh_token",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  string grant_type = 2 [
+    json_name = "grant_type",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  optional string scope = 3 [
+    json_name = "scope",
+    (google.api.field_behavior) = OPTIONAL
+  ];
+  optional string client_id = 5 [
+    json_name = "client_id",
+    (google.api.field_behavior) = OPTIONAL
+  ];
+  optional string client_secret = 6 [
+    json_name = "client_secret",
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
