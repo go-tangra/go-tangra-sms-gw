@@ -18,6 +18,16 @@ const pages = [
   { path: '/sms-gw/dashboard', nav: 'SMS dashboard', title: 'SMS dashboard' },
 ]
 
+// The shell groups module navigation under a collapsible module button.
+async function navLink(page: Page, name: string) {
+  const link = page.getByRole('link', { name })
+  const group = page.getByRole('button', { name: 'SMS Gateway' })
+  await expect(link.or(group).first()).toBeVisible({ timeout: 20_000 })
+  if (!(await link.isVisible())) await group.click()
+  await expect(link).toBeVisible()
+  return link
+}
+
 async function heading(page: Page, title: string): Promise<void> {
   await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible({ timeout: 20_000 })
 }
@@ -32,7 +42,12 @@ test('the gateway relays the built remote with the manifest exports', async ({ r
 })
 
 test('the management API refuses requests without the portal session', async ({ playwright }) => {
-  const anon = await playwright.request.newContext({ baseURL: process.env.E2E_BASE!, ignoreHTTPSErrors: process.env.E2E_INSECURE === '1' })
+  // An explicit empty state: request contexts otherwise inherit the signed-in storageState from `use`.
+  const anon = await playwright.request.newContext({
+    baseURL: process.env.E2E_BASE!,
+    ignoreHTTPSErrors: process.env.E2E_INSECURE === '1',
+    storageState: { cookies: [], origins: [] },
+  })
   const res = await anon.get('/api/sms-gw/v1/providers')
   expect(res.status()).toBe(401)
   await anon.dispose()
@@ -43,9 +58,7 @@ test('navigation reaches every page and each page is accessible', async ({ page 
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto('/')
   for (const p of pages) {
-    const link = page.getByRole('link', { name: p.nav })
-    await expect(link).toBeVisible({ timeout: 20_000 })
-    await link.click()
+    await (await navLink(page, p.nav)).click()
     await expect(page).toHaveURL(new RegExp(p.path + '(\\?|$)'))
     await heading(page, p.title)
     const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze()
@@ -70,7 +83,7 @@ test('tables page on the server and rows open from the keyboard', async ({ page 
     await row.focus()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('dialog')).toBeVisible()
-    await expect(page.getByText('Delivery receipts')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Delivery receipts' })).toBeVisible()
   }
 })
 
@@ -151,7 +164,7 @@ test.describe('create and delete flows', () => {
     await page.getByTestId('client-reset-confirm').click()
     await expect(secret).not.toHaveText(first ?? '')
     await page.getByTestId('one-time-secret-done').click()
-    await page.locator('[data-row-key]', { hasText: username }).click()
+    // The reset keeps the client's drawer open.
     await page.getByTestId('client-delete').click()
     await page.getByRole('button', { name: 'Delete' }).last().click()
     await expect(page.locator('[data-row-key]', { hasText: username })).toHaveCount(0)
