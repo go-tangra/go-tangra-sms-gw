@@ -1,0 +1,46 @@
+# Container configuration for deploy/compose.yaml (profile service, host
+# network). Development only. Mounted paths: /secrets (kek, jwt.key; 0600),
+# /identity (file SVID: sms-gw.pem, sms-gw.key, ca.pem), /state (enrollment
+# state), /acme (public ACME cache). For lcm enrollment instead of a file
+# SVID set identity.provider: provided and enroll.enabled (token_file under
+# /identity, state_file under /state).
+service_name: sms-gw
+trust_domain: example.org
+env: dev
+identity:
+  provider: file
+  file: { cert: /identity/sms-gw.pem, key: /identity/sms-gw.key, bundle: /identity/ca.pem }
+authz: { source: file, path: deploy/policy.yaml }
+server: { grpc_addr: 127.0.0.1:9983, http_addr: 127.0.0.1:9984 }
+admin: { addr: 127.0.0.1:9593 }
+discovery:
+  static:
+    gateway: ["127.0.0.1:9643"]
+    auth: ["127.0.0.1:9543"]
+db:
+  dsn: postgres://smsgw_app:dev@127.0.0.1:5437/sms_gw?sslmode=disable
+  migrate_dsn: postgres://postgres:dev@127.0.0.1:5437/sms_gw?sslmode=disable
+  max_conns: 16
+kek: { source: file, path: /secrets/kek }
+gateway: { service: gateway, issuer: https://localhost:8443, auth_service: auth }
+enroll: { enabled: false }
+public:
+  http_addr: 127.0.0.1:9901
+  https_addr: 127.0.0.1:9902
+  trusted_proxies: []
+  max_body_bytes: 65536
+public_auth:
+  jwt_secret: { file: /secrets/jwt.key }
+  access_ttl_seconds: 7200
+  refresh_ttl_seconds: 604800
+# Local ACME CA only (compose profile acme): enable with
+#   enabled: true, domains: [sms-gw.test], challenge: http-01, accept_tos: true,
+#   directory_url: https://127.0.0.1:14010/dir, directory_ca_bundle: /secrets/pebble-minica.pem,
+#   allow_insecure_directory: false, renew_before: 720h
+acme:
+  enabled: false
+  cache_dir: /acme
+webhook: { allow_http: true, allow_private: true, queue_size: 4096, workers: 4 } # development only
+retention: { interval: 1h }
+monitoring: { prometheus_url: "" }
+query: { default_page_size: 50, max_page_size: 500 }

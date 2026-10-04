@@ -1,0 +1,15 @@
+{
+  "pebble": {
+    "listenAddress": "127.0.0.1:14010",
+    "managementListenAddress": "127.0.0.1:15010",
+    "certificate": "test/certs/localhost/cert.pem",
+    "privateKey": "test/certs/localhost/key.pem",
+    "httpPort": 9901,
+    "tlsPort": 9902,
+    "ocspResponderURL": "",
+    "externalAccountBindingRequired": false,
+    "retryAfter": { "authz": 1, "order": 1 },
+    "keyAlgorithm": "ecdsa",
+    "certificateValidityPeriod": 7776000
+  }
+}

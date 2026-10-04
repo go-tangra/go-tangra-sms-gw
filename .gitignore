@@ -18,6 +18,7 @@ ui/test-results/
 .dev/
 deploy/*.dev.key
 deploy/kek.dev
+deploy/identity/
 certs/
 secrets/
 *.pem

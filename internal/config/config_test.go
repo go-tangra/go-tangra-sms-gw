@@ -27,6 +27,19 @@ func TestDevConfigValidates(t *testing.T) {
 	}
 }
 
+func TestContainerConfigValidates(t *testing.T) {
+	c, err := Load("../../deploy/container.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if c.ACME.CacheDir != "/acme" || c.KEK.Path != "/secrets/kek" {
+		t.Fatalf("container config %+v %+v", c.ACME, c.KEK)
+	}
+}
+
 func TestDefaultsKeepLegacyValues(t *testing.T) {
 	d := Default()
 	r := d.RateLimits

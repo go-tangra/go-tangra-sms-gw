@@ -1,0 +1,119 @@
+# Local development and acceptance dependencies of the sms-gw module (compose
+# project "smsgw"). Development only: fixed "dev" credentials, mock carrier,
+# loopback-only ports. Nothing here reaches a real carrier or a public CA.
+#
+#   docker compose -f deploy/compose.yaml up -d                  # postgres, carrier, callbacks
+#   docker compose -f deploy/compose.yaml --profile legacy up -d # + legacy snapshot database
+#   docker compose -f deploy/compose.yaml --profile acme up -d   # + local ACME CA (pebble)
+#
+# The V4 platform (gateway, auth, portal, lcm) is a sibling deployment: point
+# the module at it with the discovery/gateway/enroll sections of its config
+# (deploy/dev.yaml uses the platform stack's loopback ports). Run the module
+# on the host (`go run ./cmd/smsgwsvc -config deploy/dev.yaml`) or as the
+# container below (profile service).
+name: smsgw
+
+services:
+  # V4 database: sms_gw, migration role postgres, application role
+  # smsgw_app without BYPASSRLS (init-db.sql).
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: sms_gw
+    ports: ["127.0.0.1:5437:5432"]
+    volumes:
+      - ./init-db.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+      - smsgw-db:/var/lib/postgresql/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "sms_gw"]
+      interval: 2s
+      retries: 30
+
+  # Read-only legacy (v3) snapshot for smsgw-migrate. Initialised with the
+  # captured legacy schema and the representative fixture snapshot; restore a
+  # real snapshot copy (pg_dump of a stopped legacy database) instead to
+  # rehearse with it. Never the running legacy database.
+  legacy-db:
+    profiles: [legacy]
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: sms_gw_legacy
+    ports: ["127.0.0.1:5438:5432"]
+    volumes:
+      - ../tests/fixtures/legacy/runtime/legacy-schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+      - ../tests/fixtures/legacy/snapshot.sql:/docker-entrypoint-initdb.d/20-snapshot.sql:ro
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "sms_gw_legacy"]
+      interval: 2s
+      retries: 30
+
+  # Mock Voicecom carrier: providers use http://127.0.0.1:9916/multichannel-api/sendmulti/
+  # (accept), .../fail (HTTP 500) or .../reject (return code 2001).
+  carrier:
+    image: python:3-alpine
+    command: ["python", "-u", "/app/mockcarrier.py"]
+    ports: ["127.0.0.1:9916:8080"]
+    volumes: ["./mock/mockcarrier.py:/app/mockcarrier.py:ro"]
+    networks: [edge]
+
+  # Client callback receiver (same script): API clients use
+  # http://127.0.0.1:9917/_cb/<name>, which needs the development-only
+  # webhook.allow_http and webhook.allow_private (refused in production).
+  callbacks:
+    image: python:3-alpine
+    command: ["python", "-u", "/app/mockcarrier.py"]
+    ports: ["127.0.0.1:9917:8080"]
+    volumes: ["./mock/mockcarrier.py:/app/mockcarrier.py:ro"]
+    networks: [edge]
+
+  # Local ACME CA (pebble 2.6.0; later releases finalize orders
+  # asynchronously, which x/crypto's autocert does not follow). Host network
+  # so the http-01 validation reaches the module's plain public listener
+  # (httpPort in pebble/pebble.json, 9901 = deploy/dev.yaml public.http_addr)
+  # under the name sms-gw.test. Directory: https://127.0.0.1:14010/dir; its
+  # TLS root for acme.directory_ca_bundle:
+  #   docker compose -f deploy/compose.yaml cp pebble:/test/certs/pebble.minica.pem deploy/pebble/minica.pem
+  pebble:
+    profiles: [acme]
+    image: ghcr.io/letsencrypt/pebble:2.6.0
+    command: ["-config", "/cfg/pebble.json"]
+    network_mode: host
+    extra_hosts: ["sms-gw.test:127.0.0.1"]
+    environment:
+      PEBBLE_VA_NOSLEEP: "1"
+      PEBBLE_WFE_NONCEREJECT: "0"
+    volumes: ["${SMSGW_PEBBLE_CONFIG:-./pebble/pebble.json}:/cfg/pebble.json:ro"]
+
+  # The module as a container on the host network (reaches postgres and the
+  # sibling platform on loopback) with container.yaml. Secrets come from
+  # deploy/secrets/ (generated locally, gitignored); the file identity (or
+  # the enrollment token) is mounted read-only, enrollment state and the ACME
+  # cache are volumes so they survive restarts and image updates.
+  sms-gw:
+    profiles: [service]
+    image: ${SMSGW_IMAGE:-ghcr.io/go-tangra/go-tangra-sms-gw:dev}
+    network_mode: host
+    read_only: true
+    command: ["-config", "/etc/sms-gw/config.yaml"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    volumes:
+      - ${SMSGW_CONFIG:-./container.yaml}:/etc/sms-gw/config.yaml:ro
+      - ${SMSGW_SECRETS:-./secrets}:/secrets:ro # kek, jwt.key (0600, gitignored)
+      - ${SMSGW_IDENTITY:-./identity}:/identity:ro
+      - smsgw-state:/state
+      - smsgw-acme:/acme
+    depends_on:
+      postgres: { condition: service_healthy }
+
+networks:
+  data: {}
+  edge: {}
+
+volumes:
+  smsgw-db: {}
+  smsgw-state: {}
+  smsgw-acme: {}
