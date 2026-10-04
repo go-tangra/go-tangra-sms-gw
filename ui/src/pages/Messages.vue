@@ -6,7 +6,7 @@ import { call, explain } from '@/api/client'
 import type { Message, MessageDetail, Provider, Receipt } from '@/api/types'
 import { loadOptions, usePagedList } from '@/components/lists'
 import { useRowActivation } from '@/components/rows'
-import { actorLabel, statusColor, statusLabel, when } from '@/components/format'
+import { actorLabel, carrierTime, humanize, statusColor, statusLabel, when } from '@/components/format'
 import SendDrawer from '@/components/SendDrawer.vue'
 
 const ability = useAbility()
@@ -98,12 +98,14 @@ const columns: Column<Message>[] = [
   { key: 'status_message', label: 'Detail', hideOnStack: true },
   { key: 'actor', label: 'Sent by', hideOnStack: true, format: actorLabel },
 ]
+// Every receipt of the message, oldest first, as in v3: one row per carrier
+// status, repeated part receipts counted in Parts; Time is the carrier's.
 const receiptColumns: Column<Receipt>[] = [
-  { key: 'created_at', label: 'Received', format: (r) => when(r.created_at) },
-  { key: 'status', label: 'Status', format: (r) => statusLabel(r.status) },
-  { key: 'status_text', label: 'Carrier text' },
-  { key: 'parts_received', label: 'Parts', align: 'end' },
-  { key: 'sender', label: 'Sender', hideOnStack: true },
+  { key: 'timestamp', label: 'Time', format: carrierTime },
+  { key: 'status', label: 'Status', format: (r) => r.status + ' · ' + statusLabel(r.status) },
+  { key: 'status_text', label: 'Status text', format: (r) => humanize(r.status_text) },
+  { key: 'parts_received', label: 'Parts', align: 'end', format: (r) => String(r.parts_received || 1) },
+  { key: 'created_at', label: 'Received', hideOnStack: true, format: (r) => when(r.created_at) },
 ]
 </script>
 
@@ -112,15 +114,16 @@ const receiptColumns: Column<Receipt>[] = [
     <template #actions>
       <UiButton v-if="ability.can('send', 'SmsMessage')" icon="mdi-send" data-test="message-send" @click="sending = true">Send SMS</UiButton>
     </template>
+    <!-- One row of filters on wide screens; fields share the width and wrap on narrow ones. -->
     <template #filters>
-      <form class="flex flex-wrap items-end gap-2" data-test="message-filters" @submit.prevent="applyFilters">
-        <UiInput id="filter-recipient" v-model="draft.recipient" label="Recipient starts with" inputmode="numeric" size="sm" :error="filterErrors.recipient" data-test="filter-recipient" />
-        <UiInput id="filter-sid" v-model="draft.sid" label="SID" inputmode="numeric" size="sm" :error="filterErrors.sid" />
-        <UiSelect id="filter-status" v-model="draft.status" label="Status" :options="statusOptions" :clearable="false" size="sm" data-test="filter-status" />
-        <UiSelect v-if="providers.length" id="filter-provider" v-model="draft.provider_id" label="Provider" :options="providerOptions" :clearable="false" size="sm" />
-        <UiInput id="filter-client" v-model="draft.api_client_username" label="API client" size="sm" :error="filterErrors.api_client_username" />
-        <UiButton type="submit" size="sm" icon="mdi-filter-outline" data-test="filter-apply">Apply</UiButton>
-        <UiButton type="button" size="sm" variant="text" @click="clearFilters">Clear</UiButton>
+      <form class="flex w-full flex-wrap items-end gap-2 lg:flex-nowrap" data-test="message-filters" @submit.prevent="applyFilters">
+        <UiInput class="min-w-0 grow basis-36" id="filter-recipient" v-model="draft.recipient" label="Recipient starts with" inputmode="numeric" size="sm" :error="filterErrors.recipient" data-test="filter-recipient" />
+        <UiInput class="min-w-0 grow basis-36" id="filter-sid" v-model="draft.sid" label="SID" inputmode="numeric" size="sm" :error="filterErrors.sid" />
+        <UiSelect class="min-w-0 grow basis-36" id="filter-status" v-model="draft.status" label="Status" :options="statusOptions" :clearable="false" size="sm" data-test="filter-status" />
+        <UiSelect class="min-w-0 grow basis-36" v-if="providers.length" id="filter-provider" v-model="draft.provider_id" label="Provider" :options="providerOptions" :clearable="false" size="sm" />
+        <UiInput class="min-w-0 grow basis-36" id="filter-client" v-model="draft.api_client_username" label="API client" size="sm" :error="filterErrors.api_client_username" />
+        <UiButton class="shrink-0" type="submit" size="sm" icon="mdi-filter-outline" data-test="filter-apply">Apply</UiButton>
+        <UiButton class="shrink-0" type="button" size="sm" variant="text" @click="clearFilters">Clear</UiButton>
       </form>
     </template>
     <UiAlert v-if="list.error.value" kind="error" class="mb-3" data-test="message-list-error">{{ list.error.value }}</UiAlert>

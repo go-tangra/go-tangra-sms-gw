@@ -13,6 +13,7 @@ export function statusLabel(code: number): string {
     case 0: return 'Accepted by carrier'
     case 1: return 'Delivered'
     case 2: return 'Failed'
+    case 8: return 'Delivered to SMSC'
     case 16: return 'Rejected'
     case 500: return 'Carrier exchange failed'
   }
@@ -33,4 +34,15 @@ export function actorLabel(m: Pick<Message, 'actor'>): string {
 
 export function labelText(labels: Record<string, string>): string {
   return Object.values(labels).filter(Boolean).join(' · ') || 'total'
+}
+
+/** Carrier delivery time (unix seconds) as v3 showed it; 0 falls back to the ingest time. */
+export function carrierTime(r: { timestamp: number; created_at: string }): string {
+  return r.timestamp > 0 ? new Date(r.timestamp * 1000).toLocaleString() : when(r.created_at)
+}
+
+/** "sms_delivered" → "Sms delivered" (v3 humanizeSlug). */
+export function humanize(s: string): string {
+  const t = s.replace(/[_-]+/g, ' ').trim()
+  return t ? t[0]!.toUpperCase() + t.slice(1) : ''
 }

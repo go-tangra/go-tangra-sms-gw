@@ -353,7 +353,10 @@ describe('messages and dashboard', () => {
   it('filters on the server, opens details with receipt history', async () => {
     const receipt = { id: 1, status: 1, status_text: 'DELIVRD', channel: 'sms', sid: 9999, recipient: '359888123456', sender: 'SHOP', timestamp: 0, parts_received: 1, created_at: '2026-10-01T00:01:00Z', updated_at: '2026-10-01T00:01:00Z' }
     const calls = stubFetch((url) => {
-      if (url.includes('/dlrs')) return { status: 200, body: { items: [receipt], total: 1 } }
+      if (url.includes('/dlrs')) return { status: 200, body: { items: [
+        { ...receipt, id: 1, status: 8, status_text: 'sms_sent', timestamp: 1759276800, parts_received: 2 },
+        { ...receipt, id: 2, timestamp: 0 },
+      ], total: 2 } }
       if (url.includes('/messages/')) return { status: 200, body: { ...message, evidence: { request: 'POST /send token=__set__', response: '{"ok":1}' } } }
       return { status: 200, body: page([message]) }
     })
@@ -374,7 +377,12 @@ describe('messages and dashboard', () => {
     expect(calls.filter((c) => c.url.startsWith('/api/sms-gw/v1/messages?')).at(-1)).toBe(last)
     click('[data-test="message-' + message.id + '"]')
     await flushPromises()
-    expect(q('[data-test="message-receipts"]')?.textContent).toContain('DELIVRD')
+    // The whole receipt history, oldest first, as in v3: status, text,
+    // parts and the carrier's time (ingest time when the carrier sent none).
+    const rows = [...document.querySelectorAll('[data-test="message-receipts"] tbody tr')].map((r) => [...r.querySelectorAll('td')].map((c) => c.textContent?.trim()))
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.slice(0, 4)).toEqual([new Date(1759276800 * 1000).toLocaleString(), '8 · Delivered to SMSC', 'Sms sent', '2'])
+    expect(rows[1]!.slice(0, 4)).toEqual([new Date('2026-10-01T00:01:00Z').toLocaleString(), '1 · Delivered', 'DELIVRD', '1'])
     expect(q('[data-test="message-evidence-request"]')?.textContent).toContain('token=__set__')
     expectTenantSafe(calls)
     w.unmount()
