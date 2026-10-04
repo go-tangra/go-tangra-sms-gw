@@ -6,7 +6,7 @@ Source inspection corrected one planning error: logout is deliberately whitelist
 
 Security changes planned: tenant-scoped data, fail-closed unsupported authority, credential sealing/redaction, bounded queries and protected V4 management. Exact raw-evidence redaction and pagination limits must be documented with runtime fixtures before release.
 
-No public runtime implementation or migration has been performed yet. No legacy database, carrier or production certificates have been touched.
+The public Hermes listener is implemented (US1, see below); receipt ingestion, callbacks, management and migration follow in later stories. No legacy database, carrier or production certificates have been touched.
 
 ## Captured transport behavior
 
@@ -60,3 +60,32 @@ Legacy defects and exposures that V4 deliberately changes (each needs its own V4
 - Logout revocations persist in `sms_token_revocation` (jti and expiry only, never the token) and are purged after expiry.
 - Legacy `SMS_GW_*` environment variables still configure the service; secrets become references, obsolete variables (legacy mTLS/registration) are reported and ignored, and an unparseable value now stops startup instead of silently using the default.
 - Management requests are authorized only by the verified operator token and auth permission checks; legacy `x-md-global-*` identity headers are refused with 403.
+
+## Public listener parity (US1, T014–T023)
+
+`tests/contract/public_api_test.go` replays the capture scenario of `scripts/capture_legacy_runtime.py` in its order against the complete V4 application (PostgreSQL, sealed provider configuration, mock carriers with the capture's accept/reject/HTTP 500/drop/slow modes) with the same accounts, ids, templates and blocks, and compares each recorded response byte for byte (status, content type, body) after the capture's normalization. All 154 captured cases are accounted for: 133 replayed, 3 checked as observations (JWT claims, login log rows, no rows for rejected sends), 18 receipt-ingestion and callback cases deferred to US2 (their effects are applied through the repository so later reads still match). The test fails on any case that is neither matched, explicitly changed (table `v4Changes`) nor deferred.
+
+Wire details the adapter reproduces: protojson member separator `", "` and declaration field order with every field emitted; uint64 values (`to`, receipt `id`/`to`/`timestamp`, `expires_in`) as strings; the unsigned status (`4294967295` while the carrier call is pending); no HTML escaping (`<no value>`); request decoding with protobuf-go's JSON decoder over runtime descriptors of the legacy messages, so proto and JSON field names, numbers as strings and unknown-field tolerance behave as before and decode errors keep the source text (`body unmarshal proto:\u00a0…`, the no-break space of the source build); the form codec and query binding (`parsing field "page": …`); bodies decoded before authentication and rate limiting; unmatched paths and methods answer `404 page not found` (text/plain); `GET /health` stays.
+
+Deliberate differences in the replay (each asserted explicitly):
+
+- `/` (embedded admin UI) and `/metrics` answer 404 on the public listener (`surface-root`, `surface-metrics`).
+- `API_ADMIN` fails closed: get and receipt reads are `404 sms not found`, lists are empty (`get-admin-any`, `dlrs-admin`, `list-admin-all`, `list-admin-filter-username`); `/me` still returns the account with no abilities.
+- Early receipts keep the terminal state: the late carrier answer does not overwrite it, so the send response and every list showing that message report `1 sms_delivered` (`send-carrier-response-after-early-dlr`, nine list cases); the status-0 filter no longer lists it (`list-filter-status-zero`).
+- Carrier transport errors no longer name the carrier URL: `voicecom: endpoint error` instead of `voicecom: endpoint error: Post "http://…": EOF`, in the response and the stored status text (`send-carrier-connection-drop` and lists); any URL in a carrier error is redacted. HTTP-status and callback-configuration errors keep their text; the envelope (500, empty reason) is unchanged.
+- Logout revocations persist: a token revoked before a restart stays revoked (`restart-revoked-access-accepted` is `401 invalid token`).
+- Refresh issues the account's current authority instead of copying the presented claim (`refresh-stale-authority-claim` observation).
+- Raw carrier evidence is stored scrubbed and uncompressed: the carrier `token` and the `dlr_token` of the callback URL are `[REDACTED]`; the request body is otherwise the legacy one byte for byte (checked against the recorded rows). Public reads never return evidence (as before: `rawRequest`/`rawResponse` are always empty).
+
+Further V4 behaviour on the public listener, not captured by the recording:
+
+- A token is accepted only while its account exists and is enabled: a disabled account's access token is `401 account disabled`, a removed account's `404 api client not found` (the source let both act until expiry). The tenant always comes from the stored account.
+- The effective authority is the token claim only while it equals the account's authority; otherwise the caller is treated as unsupported (sees nothing, cannot send) until it logs in or refreshes.
+- Unknown usernames take a dummy bcrypt comparison, so they cannot be distinguished from wrong passwords by timing.
+- Message lists are capped at `query.max_page_size` (default 500; the recording's 13 messages are unaffected); `tests/integration/public_test.go` checks the cap.
+- Request bodies are limited to `public.max_body_bytes` (default 64 KiB): `400 BAD_REQUEST request body too large`.
+- Template rendering is bounded: at most 64 properties of 4 KiB each (`400 too many template properties` / `template property … is too long`), templates of 16 KiB, rendered text of 16 KiB and formatting widths of 1024 (`500 execute template: template output exceeds the limit`).
+- The carrier exchange is detached from the client connection and bounded to 25 s: a client that disconnects mid-send cannot leave the message without its recorded carrier outcome. A lost or failed exchange is stored once (status 500) and never resent.
+- Receipt routes (`GET /dlr`, `GET /hermes/v1/sms/dlr`) are reserved ahead of the `{id}` patterns and acknowledge with `"DLR_OK"`; until US2 wires the processor (T026/T027) the acknowledgement has no effect.
+
+Configured defaults (`deploy/dev.yaml`, `config.Default`, legacy variables in brackets): login 10/min burst 5 per client address [`SMS_GW_LOGIN_RPM`, `SMS_GW_LOGIN_BURST`], send 100/min burst 20 per client [`SMS_GW_SEND_RPM`, `SMS_GW_SEND_BURST`], receipt 500/min burst 100 per address (applied by US2) [`SMS_GW_DLR_*`]; limiter key maps bounded at 50 000 (login) and 10 000 (send) keys with LRU eviction. Forwarded client addresses (`X-Real-IP`, then the leftmost `X-Forwarded-For`) count only from `public.trusted_proxies` [`TRUSTED_PROXY_CIDRS`], which accepts addresses or CIDRs; an invalid entry stops startup instead of being ignored. Recipient policy: 7–15 digits [`SMS_GW_MSISDN_MIN_DIGITS`], optional allowed/blocked prefixes [`SMS_GW_ALLOWED_PREFIXES`, `SMS_GW_BLOCKED_PREFIXES`]. Tokens: access 7200 s, refresh 604800 s, secret of at least 32 bytes.

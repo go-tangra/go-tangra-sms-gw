@@ -12,9 +12,15 @@
 - `go test -race -count=1 ./...`: config, sealed, authz, audit, metrics, repo and app unit tests pass.
 - `sg docker -c "go test -race -tags integration -count=1 ./..."`: repository (cross-tenant references, RLS, owner views, atomic receipt aggregation, terminal guard, rollback, sequences, revocations, imports), app lifecycle (readiness, admin, extra listener, drain, failed-build cleanup) and seeded harness suites pass against `postgres:16` via testcontainers. Without docker they skip.
 
+## US1 public Hermes listener (T014–T023) — 2026-10-04
+
+- `go vet ./...` and `go vet -tags integration ./...`: clean.
+- `go test -race -count=1 ./...`: auth (claims, kinds, expiry, `alg:none`, revocation, authority agreement, login log reasons), send pipeline (validation order, tenant references, blocks before rendering, bounds, uncertain carrier outcome stored once, early terminal status kept, evidence scrubbing), rendering/part counts, rate limiter, trusted proxies, Voicecom request/response/status table and the public router/codec (in-memory stores) pass.
+- `sg docker -c "go test -race -tags integration -count=1 ./..."`: `tests/contract` replays the legacy capture against the full application: 154 cases accounted for (133 replayed byte for byte, 19 of them with the documented V4 changes of `docs/compatibility.md`, 3 observations, 18 receipt/callback cases deferred to US2). `tests/integration/public_test.go` runs two tenants with two client owners and a viewer: 100 concurrent sends are accepted and reach the mock carrier exactly once each under their stored UUID, blocked/disabled/foreign-reference/viewer/admin sends store nothing and make no carrier call, no read crosses an owner or tenant, and the page cap holds. Repository and app suites still pass (the app now binds the public listener itself).
+
 ## Unavailable prerequisites
 
-None for Phases 1–2. UI package installation uses the registry token in later phases.
+None for Phases 1–3. UI package installation uses the registry token in later phases.
 
 ## Next sequential gate
 
