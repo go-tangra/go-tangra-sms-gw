@@ -1,3 +1,12 @@
-// Navigation is populated with the permission-gated US3 pages.
-export const nav: unknown[] = []
+/** Dynamic navigation entries (none: the manifest declares the static ones). */
+export interface NavEntry {
+  title: string
+  path: string
+  icon?: string
+  order: number
+}
+
+export function nav(): NavEntry[] {
+  return []
+}
 export default nav

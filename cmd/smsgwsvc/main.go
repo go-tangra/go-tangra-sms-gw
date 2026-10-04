@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/app"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/config"
+	"github.com/go-tangra/go-tangra-sms-gw/v4/ui"
 )
 
 func main() { os.Exit(run(os.Args[1:])) }
@@ -40,7 +41,11 @@ func run(args []string) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	a, err := app.Build(ctx, cfg, app.Options{Migrate: !*noMigrate})
+	opts := app.Options{Migrate: !*noMigrate}
+	if remote, ok := ui.Remote(); ok {
+		opts.Remote = remote
+	}
+	a, err := app.Build(ctx, cfg, opts)
 	if err != nil {
 		return fail(err)
 	}

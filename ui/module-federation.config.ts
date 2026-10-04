@@ -16,11 +16,17 @@ export const shared = {
   '@go-tangra/ui/api': { singleton: true, requiredVersion: '^4.0.0', strictVersion: true, ...hostOnly },
 }
 
+// The shell registers each remote under its module name (pkg/smsgwmanifest
+// Module) and loads ./routes and ./nav (pkg/smsgwmanifest Exposes).
 export const remoteConfig = {
-  name: 'sms_gw',
+  name: 'sms-gw',
   filename: 'remoteEntry.js',
   manifest: true,
-  exposes: { './routes': './src/routes.ts', './nav': './src/nav.ts' },
+  exposes: {
+    './routes': './src/routes.ts',
+    './nav': './src/nav.ts',
+  },
   shared,
+  // The shell loads remotes at runtime; no consumer imports generated types.
   dts: false,
 }
