@@ -9,4 +9,5 @@
 }
 @plugin "@iconify/tailwind4";
 
+@source not "./tests";
 /* src/safelist.ts names the runtime-built classes this remote must emit. */
