@@ -2,9 +2,8 @@
 // (Tailwind emits only the class names it finds in the sources).
 //
 // FlyonUI re-emits the base classes the module's sources mention (.switch,
-// .input, .select, …) unlayered and after the shell sheet, overriding the
-// modifiers the kit's components add: a checked UiSwitch turned neutral grey
-// and sizes reset. The modifiers are emitted here too so they follow the bases.
+// .input, .select, …) in this sheet's utilities layer after the shell's; the
+// kit's modifiers are emitted here too so they always follow those bases.
 export const KIT_MODIFIERS = ['switch-primary', 'switch-sm', 'input-sm', 'select-sm', 'link-primary'] as const
 
 // Icons outside the kit's set (@go-tangra/ui ICONS) used by the pages; the
