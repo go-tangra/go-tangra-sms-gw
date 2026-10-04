@@ -1,9 +1,10 @@
 // Package app wires the sms-gw service: configuration → Freya runtime →
 // PostgreSQL, KEK envelope, audit and metrics → operator verification over
 // the pooled auth connection → management routes on the mesh HTTP server,
-// and the application admin listener (health, readiness, metrics). Public
-// Hermes listeners and background workers attach through AddServer and Go;
-// Run starts and drains everything with one lifecycle context.
+// the application admin listener (health, readiness, metrics) and the public
+// Hermes listener (public.go). Further listeners and background workers
+// attach through AddServer and Go; Run starts and drains everything with one
+// lifecycle context.
 package app
 
 import (
@@ -26,11 +27,15 @@ import (
 	"github.com/go-tangra/go-tangra/v4/transport/tlsconf"
 
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/audit"
+	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/auth"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/authz"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/config"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/metrics"
+	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/provider"
+	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/publicapi"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/repo"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/sealed"
+	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/sms"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/store"
 )
 
@@ -61,6 +66,13 @@ type App struct {
 	// Management is the mesh HTTP API (reached only through the gateway);
 	// unmatched paths answer 404.
 	Management *http.ServeMux
+	// Hermes domain and the public listener (public.go).
+	Auth    *auth.Service
+	SMS     *sms.Service
+	Senders *provider.Cache
+	Public  *publicapi.Server
+
+	publicAddr net.Addr
 
 	servers  []server
 	workers  []func(context.Context)
@@ -166,6 +178,9 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 	a.Freya.HTTP().HandlePrefix("/", a.Management)
 	a.Go(a.purgeRevocations)
 	if err := a.buildAdmin(); err != nil {
+		return nil, err
+	}
+	if err := a.buildPublic(); err != nil {
 		return nil, err
 	}
 	if o.Register != nil {

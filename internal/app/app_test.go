@@ -54,7 +54,7 @@ func TestUnreachableDatabaseBindsNothing(t *testing.T) {
 	if _, err := Build(context.Background(), c, testOptions()); err == nil {
 		t.Fatal("unreachable database accepted")
 	}
-	for _, addr := range []string{c.Server.HTTPAddr, c.Server.GRPCAddr, c.Admin.Addr} {
+	for _, addr := range []string{c.Server.HTTPAddr, c.Server.GRPCAddr, c.Admin.Addr, c.Public.HTTPAddr} {
 		l, err := net.Listen("tcp", addr)
 		if err != nil {
 			t.Fatalf("failed build leaked %s: %v", addr, err)

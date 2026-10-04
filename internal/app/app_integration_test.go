@@ -48,7 +48,10 @@ func TestLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	pub, err := a.AddServer("public", c.Public.HTTPAddr, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("hermes")) }), nil)
+	if a.PublicAddr() != c.Public.HTTPAddr {
+		t.Fatalf("public listener on %s", a.PublicAddr())
+	}
+	extra, err := a.AddServer("extra", freePort(t), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("extra")) }), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +82,17 @@ func TestLifecycle(t *testing.T) {
 	if code, body := get(t, admin+"/metrics"); code != 200 || !strings.Contains(body, "freya_up 1") {
 		t.Fatal(code)
 	}
-	if code, body := get(t, "http://"+pub.String()+"/"); code != 200 || body != "hermes" {
+	public := "http://" + a.PublicAddr()
+	if code, body := get(t, public+"/health"); code != 200 || body != "{\"status\":\"ok\"}\n" {
+		t.Fatal(code, body)
+	}
+	// Neither management, admin nor UI routes are served on the public listener.
+	for _, path := range []string{"/api/sms-gw/v1/providers", "/metrics", "/readyz", "/ui/mf-manifest.json", "/"} {
+		if code, _ := get(t, public+path); code != 404 {
+			t.Fatalf("public %s: %d", path, code)
+		}
+	}
+	if code, body := get(t, "http://"+extra.String()+"/"); code != 200 || body != "extra" {
 		t.Fatal(code, body)
 	}
 	w := httptest.NewRecorder()
@@ -99,7 +112,7 @@ func TestLifecycle(t *testing.T) {
 	if !stopped.Load() {
 		t.Fatal("worker not stopped")
 	}
-	if _, err := net.DialTimeout("tcp", pub.String(), time.Second); err == nil {
+	if _, err := net.DialTimeout("tcp", a.PublicAddr(), time.Second); err == nil {
 		t.Fatal("public listener still open after shutdown")
 	}
 }
@@ -132,7 +145,7 @@ func TestFailedBuildAfterBindReleasesListeners(t *testing.T) {
 	if _, err := Build(context.Background(), c, o); err == nil {
 		t.Fatal("register failure ignored")
 	}
-	for _, addr := range []string{c.Server.HTTPAddr, c.Server.GRPCAddr, c.Admin.Addr} {
+	for _, addr := range []string{c.Server.HTTPAddr, c.Server.GRPCAddr, c.Admin.Addr, c.Public.HTTPAddr} {
 		l, err := net.Listen("tcp", addr)
 		if err != nil {
 			t.Fatalf("failed build leaked %s: %v", addr, err)
