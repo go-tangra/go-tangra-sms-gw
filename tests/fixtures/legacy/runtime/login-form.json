@@ -1,0 +1,16 @@
+{
+  "case": "login-form",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/login",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    "body": "username=client_b&password=Passw0rd%21&grant_type=password"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"access_token\":\"{{access_token:client_b(form)}}\", \"refresh_token\":\"{{refresh_token:client_b(form)}}\", \"token_type\":\"Bearer\", \"expires_in\":\"7200\"}"
+  }
+}

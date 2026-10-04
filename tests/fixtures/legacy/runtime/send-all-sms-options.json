@@ -1,0 +1,53 @@
+{
+  "case": "send-all-sms-options",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/sms",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": "{\"to\": 359888000104, \"providerId\": 2, \"templateId\": 7, \"properties\": {\"name\": \"\\u041c\\u0430\\u0440\\u0438\\u044f\"}, \"sms\": {\"from\": \"Capture\", \"encoding\": \"gsm-03-38\", \"concatenate\": 3, \"validity\": {\"ttl\": 60, \"units\": \"minutes\"}, \"mccmnc\": 28401}}"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"data\":{\"id\":\"{{msg:send-all-sms-options}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000104\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"Здравей Мария\", \"status\":0, \"statusMessage\":\"sms_provider_accepted\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"\", \"apiClientUsername\":\"\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}, \"endpointResponse\":{\"returnCode\":0, \"returnMessage\":\"Message accepted\", \"channels\":{\"sms\":{\"sendOrder\":1, \"messageParts\":1}, \"viber\":null}}}"
+  },
+  "observed": {
+    "db_row": {
+      "id": "{{msg:send-all-sms-options}}",
+      "create_by": 1,
+      "sid": 9999,
+      "recipient": "359888000104",
+      "priority": 2,
+      "provider_id": 2,
+      "template_id": 7,
+      "defer": "",
+      "user_name": null,
+      "data": {
+        "sms": {
+          "from": "Capture",
+          "mccmnc": 28401,
+          "encoding": "gsm-03-38",
+          "validity": {
+            "ttl": 60,
+            "units": "minutes"
+          },
+          "concatenate": 3
+        },
+        "properties": {
+          "name": "Мария"
+        }
+      },
+      "dlr_ts": 0,
+      "status_code": 0,
+      "message": "Здравей Мария",
+      "status_message": "sms_provider_accepted",
+      "remote_address": "",
+      "raw_request": "POST /multichannel-api/sendmulti/ HTTP/1.1\r\nHost: 127.0.0.1:{{port}}\r\nUser-Agent: req/v3 (https://github.com/imroc/req)\r\nContent-Length: 304\r\nContent-Type: application/json; charset=utf-8\r\nAccept-Encoding: gzip\r\n\r\n{\"sid\":9999,\"request_id\":\"{{msg:send-all-sms-options}}\",\"to\":359888000104,\"send_order\":[\"sms\"],\"callback_url\":\"http://127.0.0.1:{{port}}/dlr?dlr_token={{dlr_token:manual}}\",\"sms\":{\"text\":\"Здравей Мария\",\"encoding\":\"gsm-03-38\",\"concatenate\":3,\"from\":\"Capture\",\"mccmnc\":28401}}",
+      "raw_response": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nDate: {{http_date}}\r\nContent-Length: 108\r\n\r\n{\"return_code\":0,\"return_message\":\"Message accepted\",\"channels\":{\"sms\":{\"send_order\":1,\"message_parts\":1}}}\n",
+      "raw_request_storage": "gzip",
+      "raw_response_storage": "gzip"
+    }
+  }
+}

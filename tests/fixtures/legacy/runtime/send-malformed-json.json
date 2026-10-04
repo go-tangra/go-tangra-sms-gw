@@ -1,0 +1,17 @@
+{
+  "case": "send-malformed-json",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/sms",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}",
+      "Content-Type": "application/json"
+    },
+    "body": "{\"to\":"
+  },
+  "response": {
+    "status": 400,
+    "content_type": "application/json",
+    "body": "{\"code\":400, \"reason\":\"CODEC\", \"message\":\"body unmarshal proto: unexpected EOF\", \"metadata\":{}}"
+  }
+}

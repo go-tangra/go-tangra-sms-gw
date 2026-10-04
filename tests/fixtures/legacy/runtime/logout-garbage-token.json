@@ -1,0 +1,17 @@
+{
+  "case": "logout-garbage-token",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/logout",
+    "headers": {
+      "Authorization": "Bearer garbage",
+      "X-Refresh-Token": "garbage"
+    },
+    "body": "{}"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{}"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "case": "send-template-missing",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/sms",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": "{\"to\": 359888000100, \"providerId\": 2, \"templateId\": 99999, \"properties\": {}, \"sms\": {\"from\": \"Capture\", \"encoding\": \"utf-8\"}}"
+  },
+  "response": {
+    "status": 404,
+    "content_type": "application/json",
+    "body": "{\"code\":404, \"reason\":\"RECORD_NOT_FOUND\", \"message\":\"template not found\", \"metadata\":{}}"
+  }
+}

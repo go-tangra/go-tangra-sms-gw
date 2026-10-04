@@ -1,0 +1,16 @@
+{
+  "case": "me-viewer",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/me",
+    "headers": {
+      "Authorization": "Bearer {{access_token:viewer_v}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"user\":{\"id\":3, \"username\":\"viewer_v\", \"email\":\"viewer_v@example.invalid\", \"authority\":\"API_VIEWER\"}, \"abilities\":[{\"action\":\"list\", \"subject\":\"sms\"}, {\"action\":\"get\", \"subject\":\"sms\"}, {\"action\":\"get\", \"subject\":\"dlr\"}]}"
+  }
+}

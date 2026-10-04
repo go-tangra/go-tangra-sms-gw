@@ -1,0 +1,14 @@
+{
+  "case": "dlrs-no-token",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms/dlr/{{msg:receipts}}",
+    "headers": {},
+    "body": null
+  },
+  "response": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": "{\"code\":401, \"reason\":\"UNAUTHORIZED\", \"message\":\"missing bearer token\", \"metadata\":{}}"
+  }
+}

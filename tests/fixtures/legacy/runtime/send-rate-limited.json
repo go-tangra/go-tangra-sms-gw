@@ -1,0 +1,40 @@
+{
+  "case": "send-rate-limited",
+  "note": "Default SMS_GW_SEND_RPM=100 burst 20, keyed by client id",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/sms"
+  },
+  "response": {
+    "status": 429,
+    "content_type": "application/json",
+    "body": "{\"code\":429, \"reason\":\"TOO_MANY_REQUESTS\", \"message\":\"rate limit exceeded for client:1\", \"metadata\":{}}"
+  },
+  "observed": {
+    "statuses_in_order": [
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      429,
+      429
+    ],
+    "other_client_not_limited": 200
+  }
+}

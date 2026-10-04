@@ -1,6 +1,6 @@
 # Compatibility decisions and capture status
 
-The Hermes listener preserves legacy public routes and payload conventions; V4 management is a separate contract. Source snapshots and checksums are in tests/fixtures/legacy/. Runtime parity is not yet demonstrated.
+The Hermes listener preserves legacy public routes and payload conventions; V4 management is a separate contract. Source snapshots, codec goldens and database-backed runtime recordings of the legacy service are in tests/fixtures/legacy/ (see its README). V4 parity tests replay `tests/fixtures/legacy/runtime/`.
 
 Source inspection corrected one planning error: logout is deliberately whitelisted, succeeds without a token and independently validates/revokes Authorization and X-Refresh-Token when supplied. It must remain accessible after access-token expiry. The request id does not grant revocation authority. The source rate-limit key for send is client ID, with IP fallback; it is not a concatenated client/IP key. Source logout uses an in-memory denylist; destination persistent revocation is an intentional improvement.
 
@@ -14,4 +14,35 @@ The actual Kratos v2 protobuf JSON codec emits camel-case field names unless a p
 
 The receipt wrapper uses `Result(200, "DLR_OK")`: with its default JSON codec the body is the JSON string `"DLR_OK"` and Content-Type application/json, not an unquoted plain-text body. Keep this source-observed distinction in the adapter. `tests/fixtures/legacy/dlr-ack.json` records the codec output.
 
-Representative values in fixtures are synthetic, sanitized samples. Error reasons/statuses and field encoding are captured from the actual source codec; full application behavior remains unverified until isolated legacy runtime capture can run.
+Codec goldens use synthetic, sanitized values; the runtime recordings below come from the running legacy service.
+
+## Runtime-established legacy behaviour (T001)
+
+Recorded from the running legacy service (source commit in `tests/fixtures/legacy/provenance.json`). File names refer to `tests/fixtures/legacy/runtime/`.
+
+Preserved on the public listener:
+
+- Routes and aliases: `/hermes/v1/{login,refresh_token,logout,me}`; send/list/get/receipts under both `/hermes/v1/sms` and `/v1/sms`; carrier receipts only via `GET /dlr` and `GET /hermes/v1/sms/dlr`. Unknown paths and wrong methods (including `POST /dlr`, `GET /hermes/v1/logout`) return 404 `text/plain` `404 page not found`, not 405 (`surface-*`, `dlr-post-method`, `logout-get-method`).
+- Login accepts JSON and form bodies; `grant_type` is not checked; empty username or password is 400 `BAD_REQUEST`; unknown user and wrong password share 401 `invalid credentials`; disabled is 401 `account disabled`; malformed JSON is 400 `CODEC` (`login-*`). `expires_in` is the quoted string `"7200"`.
+- JWT: HS256, claims `authority, kind, username, iss=sms-gw, sub=<client id>, iat=nbf, exp, jti`; access 7200 s, refresh 604800 s; the pair shares one 32-hex `jti` (`jwt-claims`). Error messages: `missing bearer token`, `invalid token` (bad signature, `alg:none`, non-`Bearer ` scheme including lowercase `bearer`), `token expired` (also for a future `nbf`), `wrong token kind` (missing or mismatched `kind`).
+- Refresh issues a new pair but does not rotate: the old refresh token stays usable, and the authority claim is copied from the presented token, not re-read from the account (`refresh-json`, `refresh-stale-authority-claim`). Disabled account is 401 `account disabled`; unknown client is 404 `api client not found`; a subject above uint32 is 401 `invalid subject`.
+- Logout is unauthenticated and always `200 {}`; it revokes whatever valid Bearer/`X-Refresh-Token` it is given. Because the pair shares a jti, revoking the refresh token also revokes its access token, including after the access token expired (`logout-*`, `me-after-logout`, `refresh-after-logout`).
+- `GET /me` returns the database profile and static abilities (API_CLIENT four, API_VIEWER three, any other authority `[]`); it does not check the authority claim. A token whose subject does not resolve is 404 `api client not found`.
+- Send validation order and errors: authority (403 unless API_CLIENT), providerId 0 (400), recipient 0/length 7–15 (400), provider missing (404)/non-SMS/OFF (400), active block for the provider or provider 0 (400), templateId 0 (400), template missing (404)/OFF/non-SMS (400), missing `body` fragment (400), bad template syntax (500 `INTERNAL_ERROR`), unknown provider type (500). None of these creates a row (`send-rejections-persisted`). Disabled blocks are not enforced. Unknown body fields (`text`, `defer`) are ignored; `to` accepts a JSON number or string; proto names `provider_id`/`template_id` are accepted alongside `providerId`/`templateId`. Missing template variables render as `<no value>`.
+- Message JSON always has `sms:null`, `rawRequest:""`, `rawResponse:""`, `userName:""` and `providerId:0` (the legacy mapper never fills them); the send response also has empty `providerName`/`apiClientUsername`, which Get/List fill. Status is uint32: a message read while its carrier call is pending shows `4294967295` (`get-while-carrier-pending`).
+- Carrier outcomes: a carrier return code is stored and returned with HTTP 200 (`2001` → `sms_invalid_sid`); HTTP 5xx or a dropped connection returns HTTP 500 with an empty reason and the carrier error text, stores status 500 with that text, and is never resent (`send-carrier-*`).
+- List: default page 1/size 50, negative values fall back to defaults, ordering is newest first, `pageSize` is unbounded (100000 accepted), `nopaging`, `orderBy` and `or` are ignored; `query` is a JSON object with `recipient` (prefix), `sid`, `status`, `api_client_username`; malformed `query` is ignored; a non-numeric `page` is 400 `CODEC` (`list-*`).
+- Ownership: API_CLIENT and API_VIEWER see only their own messages and receipts (foreign or unknown ids are 404 `sms not found`); an unknown authority sees nothing.
+- Receipts: always `200 "DLR_OK"` (`application/json`). Query names are the snake-case proto names; camel-case names are not bound. Wrong or missing `dlr_token` and unknown/empty `request_id` change nothing; a provider without a stored token accepts any token. Duplicate `(message, status)` receipts increment `parts_received`; once the message is terminal (1, 2, 16, ≥1000) later receipts are stored but do not change it; unknown codes are stored with empty status text.
+- Outbound callback: `POST` JSON `{"message_id","channel","message_status","status_text","to","from","timestamp"}` with numeric `to`/`timestamp` and the canonical slug as `status_text`. With a secret, headers go out as `X-Smsgw-Timestamp` and `X-Smsgw-Signature` (Go canonical spelling of `X-SmsGw-*`; header names are case-insensitive) and the signature verifies as documented above; with an empty secret no signature headers are sent. Non-2xx and redirects are retried for six attempts with 0.2/0.4/0.8/1.6/3.2 s gaps; redirects are never followed (`webhook-*`). Every accepted receipt, duplicates included, produces a callback.
+- Rate limits: login burst 5 per client IP (6th attempt 429 `rate limit exceeded for <ip>`), send burst 20 per client id (21st 429 `rate limit exceeded for client:<id>`), other clients unaffected (`login-rate-limited`, `send-rate-limited`).
+
+Legacy defects and exposures that V4 deliberately changes (each needs its own V4 test):
+
+- A receipt that arrives before the carrier response is overwritten: terminal `1 sms_delivered` became `0 sms_provider_accepted` when the slow carrier answered (`send-carrier-response-after-early-dlr`). V4 keeps the terminal state.
+- Logout revocations are process memory only; a revoked token was accepted again after restart (`restart-revoked-access-accepted`). V4 persists revocations.
+- API_ADMIN tokens read every client's messages and receipts over the public API but cannot send (`get-admin-any`, `list-admin-all`, `dlrs-admin`, `send-admin-authority`). V4 fails closed for unsupported authorities.
+- Raw carrier evidence is stored gzip-compressed with the carrier `token` and the `dlr_token` callback URL in clear (`send-roundtrip` `db_row`), provider configuration and callback secrets are plaintext columns, and carrier error text with internal URLs is returned to clients. V4 seals secrets, scrubs evidence and returns sanitized errors; the response envelope and status code stay.
+- `/metrics` and the embedded admin UI are served unauthenticated on the public listener. V4 keeps both off the public listener.
+- Unbounded `pageSize`. V4 caps page size; the cap is a documented security change.
+- Concurrent duplicate receipts were all counted in this run (100/100), but the legacy read-then-increment is not atomic. V4 makes the increment a single atomic upsert.

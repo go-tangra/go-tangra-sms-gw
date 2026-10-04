@@ -1,0 +1,16 @@
+{
+  "case": "list-filter-sql-text",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms?query=%7B%22recipient%22%3A+%221%27+OR+%271%27%3D%271%22%7D&pageSize=2",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"items\":[], \"total\":0}"
+  }
+}

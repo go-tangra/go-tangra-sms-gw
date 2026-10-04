@@ -1,0 +1,17 @@
+{
+  "case": "restart-revoked-access-accepted",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/me",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_s}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"user\":{\"id\":9, \"username\":\"client_s\", \"email\":\"client_s@example.invalid\", \"authority\":\"API_CLIENT\"}, \"abilities\":[{\"action\":\"create\", \"subject\":\"sms\"}, {\"action\":\"list\", \"subject\":\"sms\"}, {\"action\":\"get\", \"subject\":\"sms\"}, {\"action\":\"get\", \"subject\":\"dlr\"}]}"
+  },
+  "note": "Logout revocations live in process memory; a token revoked before restart is accepted again"
+}

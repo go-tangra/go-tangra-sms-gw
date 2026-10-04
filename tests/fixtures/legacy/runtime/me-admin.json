@@ -1,0 +1,16 @@
+{
+  "case": "me-admin",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/me",
+    "headers": {
+      "Authorization": "Bearer {{access_token:admin_x}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"user\":{\"id\":4, \"username\":\"admin_x\", \"email\":\"admin_x@example.invalid\", \"authority\":\"API_ADMIN\"}, \"abilities\":[]}"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "case": "list-filter-sid",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms?query=%7B%22sid%22%3A+9999%7D&pageSize=3",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"items\":[{\"id\":\"{{msg:slow-carrier}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000210\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"ping\", \"status\":0, \"statusMessage\":\"sms_provider_accepted\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"fake-slow\", \"apiClientUsername\":\"client_a\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}, {\"id\":\"{{msg:send-carrier-connection-drop}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000203\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"ping\", \"status\":500, \"statusMessage\":\"voicecom: endpoint error: Post \\\"http://127.0.0.1:{{port}}/drop\\\": EOF\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"fake-drop\", \"apiClientUsername\":\"client_a\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}, {\"id\":\"{{msg:send-carrier-http500}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000202\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"ping\", \"status\":500, \"statusMessage\":\"voicecom: http 500 Internal Server Error\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"fake-http500\", \"apiClientUsername\":\"client_a\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}], \"total\":13}"
+  }
+}

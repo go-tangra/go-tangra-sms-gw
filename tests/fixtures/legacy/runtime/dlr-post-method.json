@@ -1,0 +1,14 @@
+{
+  "case": "dlr-post-method",
+  "request": {
+    "method": "POST",
+    "path": "/dlr?request_id={{msg:receipts}}&channel=sms&sid=9999&to=359888000220&from=Capture&timestamp=1700000000&dlr_token={{dlr_token:manual}}&message_status=16",
+    "headers": {},
+    "body": null
+  },
+  "response": {
+    "status": 404,
+    "content_type": "text/plain; charset=utf-8",
+    "body": "404 page not found\n"
+  }
+}

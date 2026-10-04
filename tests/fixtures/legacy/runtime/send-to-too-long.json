@@ -1,0 +1,16 @@
+{
+  "case": "send-to-too-long",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/sms",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": "{\"to\": 18446744073709551615, \"providerId\": 2, \"templateId\": 2, \"properties\": {}, \"sms\": {\"from\": \"Capture\", \"encoding\": \"utf-8\"}}"
+  },
+  "response": {
+    "status": 400,
+    "content_type": "application/json",
+    "body": "{\"code\":400, \"reason\":\"BAD_REQUEST\", \"message\":\"recipient 18446744073709551615 has an invalid length (expected 7-15 digits)\", \"metadata\":{}}"
+  }
+}

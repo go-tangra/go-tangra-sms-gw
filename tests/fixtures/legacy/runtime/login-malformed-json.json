@@ -1,0 +1,16 @@
+{
+  "case": "login-malformed-json",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/login",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\"username\":"
+  },
+  "response": {
+    "status": 400,
+    "content_type": "application/json",
+    "body": "{\"code\":400, \"reason\":\"CODEC\", \"message\":\"body unmarshal proto: unexpected EOF\", \"metadata\":{}}"
+  }
+}

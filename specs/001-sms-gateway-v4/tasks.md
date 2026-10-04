@@ -10,7 +10,7 @@
 
 Establish V4 module and capture the source contract before changing behavior.
 
-- [ ] T001 Capture every legacy public operation/alias, auth/error/default/uint64/status case and signed callback payload from ../go-tangra-sms-gw into tests/fixtures/legacy/ and record provenance in tests/fixtures/legacy/README.md; use mock carrier and sanitized records
+- [X] T001 Capture every legacy public operation/alias, auth/error/default/uint64/status case and signed callback payload from ../go-tangra-sms-gw into tests/fixtures/legacy/ and record provenance in tests/fixtures/legacy/README.md; use mock carrier and sanitized records
 - [X] T002 Create go.mod and go.sum for github.com/go-tangra/go-tangra-sms-gw/v4 with the exact local V4 framework/SDK/Go baseline in plan.md; exclude legacy common, bootstrap and Wire dependencies
 - [X] T003 [P] Create Makefile generation/lint/test/integration/build/compose targets and .gitignore for secrets, UI output and local fixtures; do not copy legacy generated binaries/assets
 - [X] T004 [P] Initialize ui/package.json, ui/.npmrc, ui/tsconfig.json and ui/vite.config.ts with the V4 UI kit, shared dependencies and package-token references from contracts/platform.md
@@ -161,8 +161,4 @@ Complete setup and foundation, then deliver US1 as a public mock-carrier MVP and
 
 ## Implementation progress — 2026-10-04
 
-T002–T005 setup artifacts are complete. Direct Go dependency pins and archive checksums resolved successfully from the cache; this does not establish a complete runtime build. UI package/federation initialization is present, but no management pages or installed UI dependencies exist yet.
-
-T001 is partially implemented: fingerprinted source/proto snapshots, all generated public-route evidence, reproducible source-codec harness, 26 HTTP codec/error fixtures, signed callback bytes and original JWT/password race tests. Full source application capture requires isolated PostgreSQL and mock carrier; Docker access is denied and PostgreSQL binaries are absent. Do not mark T001 complete or proceed past its sequential compatibility gate.
-
-UI installation also cannot be verified: npm offline metadata is missing, and registry DNS fails (EAI_AGAIN). No package lock was invented, no remote fallback copy was used and no runtime tests were reported as passing. See docs/validation.md for exact commands and outcomes.
+- Phase 1 complete. T001: `scripts/capture_legacy_runtime.py` recorded 154 database-backed cases from the running legacy service (isolated PostgreSQL, legacy mock carrier, in-process failure carrier and callback receiver) into `tests/fixtures/legacy/runtime/`; findings and deliberate V4 changes are in `docs/compatibility.md`.

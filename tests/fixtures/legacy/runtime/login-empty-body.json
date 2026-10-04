@@ -1,0 +1,14 @@
+{
+  "case": "login-empty-body",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/login",
+    "headers": {},
+    "body": "{}"
+  },
+  "response": {
+    "status": 400,
+    "content_type": "application/json",
+    "body": "{\"code\":400, \"reason\":\"BAD_REQUEST\", \"message\":\"username and password are required\", \"metadata\":{}}"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "case": "send-unknown-authority",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/sms",
+    "headers": {
+      "Authorization": "Bearer {{forged_jwt:authority-ROOT}}"
+    },
+    "body": "{\"to\": 359888000100, \"providerId\": 2, \"templateId\": 2, \"properties\": {}, \"sms\": {\"from\": \"Capture\", \"encoding\": \"utf-8\"}}"
+  },
+  "response": {
+    "status": 403,
+    "content_type": "application/json",
+    "body": "{\"code\":403, \"reason\":\"FORBIDDEN\", \"message\":\"sending SMS requires API_CLIENT authority\", \"metadata\":{}}"
+  }
+}

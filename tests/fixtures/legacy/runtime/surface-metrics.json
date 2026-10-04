@@ -1,0 +1,28 @@
+{
+  "case": "surface-metrics",
+  "request": {
+    "method": "GET",
+    "path": "/metrics"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "text/plain; version=0.0.4; charset=utf-8; escaping=underscores",
+    "body": "<prometheus exposition omitted>"
+  },
+  "note": "Scraped after the instance-1 scenarios; unauthenticated on the public listener",
+  "observed": {
+    "families": {
+      "sms_gw_dlr_received_total": [
+        "status"
+      ],
+      "sms_gw_send_duration_seconds": [
+        "outcome",
+        "provider"
+      ],
+      "sms_gw_send_total": [
+        "outcome",
+        "provider"
+      ]
+    }
+  }
+}

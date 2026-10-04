@@ -1,0 +1,14 @@
+{
+  "case": "dlr-empty-request-id",
+  "request": {
+    "method": "GET",
+    "path": "/dlr?request_id=&channel=sms&sid=9999&to=359888000220&from=Capture&timestamp=1700000000&dlr_token={{dlr_token:manual}}&message_status=1",
+    "headers": {},
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "\"DLR_OK\""
+  }
+}

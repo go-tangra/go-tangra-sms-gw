@@ -1,0 +1,17 @@
+{
+  "case": "me-alg-none",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/me",
+    "headers": {
+      "Authorization": "Bearer {{forged_jwt:me-alg-none}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": "{\"code\":401, \"reason\":\"UNAUTHORIZED\", \"message\":\"invalid token\", \"metadata\":{}}"
+  },
+  "note": "Token forged with the capture secret (see case name)"
+}

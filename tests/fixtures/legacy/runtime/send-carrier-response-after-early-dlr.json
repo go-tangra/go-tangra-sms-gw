@@ -1,0 +1,57 @@
+{
+  "case": "send-carrier-response-after-early-dlr",
+  "note": "Send completes after a terminal DLR already arrived; legacy overwrites the terminal status with the provider response",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/sms",
+    "body": "{\"to\": 359888000210, \"providerId\": 9, \"templateId\": 2, \"properties\": {}, \"sms\": {\"from\": \"Capture\", \"encoding\": \"utf-8\"}}"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"data\":{\"id\":\"{{msg:slow-carrier}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000210\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"ping\", \"status\":0, \"statusMessage\":\"sms_provider_accepted\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"\", \"apiClientUsername\":\"\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}, \"endpointResponse\":{\"returnCode\":0, \"returnMessage\":\"Message accepted\", \"channels\":{\"sms\":{\"sendOrder\":1, \"messageParts\":1}, \"viber\":null}}}"
+  },
+  "observed": {
+    "db_row": {
+      "id": "{{msg:slow-carrier}}",
+      "create_by": 1,
+      "sid": 9999,
+      "recipient": "359888000210",
+      "priority": 2,
+      "provider_id": 9,
+      "template_id": 2,
+      "defer": "",
+      "user_name": null,
+      "data": {
+        "sms": {
+          "from": "Capture",
+          "encoding": "utf-8"
+        },
+        "properties": {}
+      },
+      "dlr_ts": 1700000000,
+      "status_code": 0,
+      "message": "ping",
+      "status_message": "sms_provider_accepted",
+      "remote_address": "",
+      "raw_request": "POST /slow HTTP/1.1\r\nHost: 127.0.0.1:{{port}}\r\nUser-Agent: req/v3 (https://github.com/imroc/req)\r\nContent-Length: 264\r\nContent-Type: application/json; charset=utf-8\r\nAccept-Encoding: gzip\r\n\r\n{\"sid\":9999,\"request_id\":\"{{msg:slow-carrier}}\",\"to\":359888000210,\"send_order\":[\"sms\"],\"callback_url\":\"http://127.0.0.1:{{port}}/dlr?dlr_token={{dlr_token:slow}}\",\"sms\":{\"text\":\"ping\",\"encoding\":\"utf-8\",\"concatenate\":2,\"from\":\"Capture\"}}",
+      "raw_response": "HTTP/1.1 200 OK\r\nServer: BaseHTTP/0.6 Python/3.12.3\r\nDate: {{http_date}}\r\nContent-Type: application/json\r\nContent-Length: 107\r\n\r\n{\"return_code\":0,\"return_message\":\"Message accepted\",\"channels\":{\"sms\":{\"send_order\":1,\"message_parts\":1}}}",
+      "raw_request_storage": "gzip",
+      "raw_response_storage": "gzip"
+    },
+    "dlr_rows": [
+      {
+        "id": 1,
+        "channel": "sms",
+        "sid": 9999,
+        "status_text": "sms_delivered",
+        "message_status": 1,
+        "recipient": 359888000210,
+        "sender": "Capture",
+        "timestamp": 1700000000,
+        "remote_address": "127.0.0.1",
+        "parts_received": 1
+      }
+    ]
+  }
+}

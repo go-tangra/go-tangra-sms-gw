@@ -1,0 +1,16 @@
+{
+  "case": "send-provider-viber",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/sms",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": "{\"to\": 359888000100, \"providerId\": 5, \"templateId\": 2, \"properties\": {}, \"sms\": {\"from\": \"Capture\", \"encoding\": \"utf-8\"}}"
+  },
+  "response": {
+    "status": 400,
+    "content_type": "application/json",
+    "body": "{\"code\":400, \"reason\":\"BAD_REQUEST\", \"message\":\"provider not allowed for this service: OBJECT_TYPE_VIBER\", \"metadata\":{}}"
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "case": "login-log-rows",
+  "note": "sms_login_log rows after the login cases above, in order",
+  "observed": {
+    "rows": [
+      {
+        "client_id": 1,
+        "username": "client_a",
+        "success": true,
+        "error_message": "",
+        "login_ip": "127.0.0.1",
+        "user_agent": ""
+      },
+      {
+        "client_id": 2,
+        "username": "client_b",
+        "success": true,
+        "error_message": "",
+        "login_ip": "127.0.0.1",
+        "user_agent": ""
+      },
+      {
+        "client_id": 0,
+        "username": "client_a",
+        "success": false,
+        "error_message": "missing credentials",
+        "login_ip": "127.0.0.1",
+        "user_agent": ""
+      },
+      {
+        "client_id": 0,
+        "username": "",
+        "success": false,
+        "error_message": "missing credentials",
+        "login_ip": "127.0.0.1",
+        "user_agent": ""
+      },
+      {
+        "client_id": 0,
+        "username": "nobody",
+        "success": false,
+        "error_message": "unknown user",
+        "login_ip": "127.0.0.1",
+        "user_agent": ""
+      },
+      {
+        "client_id": 1,
+        "username": "client_a",
+        "success": false,
+        "error_message": "wrong password",
+        "login_ip": "127.0.0.1",
+        "user_agent": ""
+      },
+      {
+        "client_id": 5,
+        "username": "disabled_d",
+        "success": false,
+        "error_message": "account disabled",
+        "login_ip": "127.0.0.1",
+        "user_agent": ""
+      },
+      {
+        "client_id": 8,
+        "username": "client_l",
+        "success": true,
+        "error_message": "",
+        "login_ip": "127.0.0.1",
+        "user_agent": ""
+      }
+    ],
+    "last_login": [
+      {
+        "username": "client_a",
+        "last_login_ip": "127.0.0.1",
+        "has_time": true
+      },
+      {
+        "username": "client_b",
+        "last_login_ip": "127.0.0.1",
+        "has_time": true
+      },
+      {
+        "username": "viewer_v",
+        "last_login_ip": "",
+        "has_time": false
+      },
+      {
+        "username": "admin_x",
+        "last_login_ip": "",
+        "has_time": false
+      },
+      {
+        "username": "disabled_d",
+        "last_login_ip": "",
+        "has_time": false
+      },
+      {
+        "username": "client_f",
+        "last_login_ip": "",
+        "has_time": false
+      },
+      {
+        "username": "client_r",
+        "last_login_ip": "",
+        "has_time": false
+      },
+      {
+        "username": "client_l",
+        "last_login_ip": "127.0.0.1",
+        "has_time": true
+      },
+      {
+        "username": "client_s",
+        "last_login_ip": "",
+        "has_time": false
+      }
+    ]
+  }
+}

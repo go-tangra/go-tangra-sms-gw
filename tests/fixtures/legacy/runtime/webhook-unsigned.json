@@ -1,0 +1,24 @@
+{
+  "case": "webhook-unsigned",
+  "note": "client_b has an empty callback secret",
+  "observed": {
+    "deliveries_total": 1,
+    "all_signatures_valid": true,
+    "all_signed": false,
+    "examples": [
+      {
+        "path": "/ok/b",
+        "content_type": "application/json",
+        "body": "{\"message_id\":\"{{msg:webhook-359888000240}}\",\"channel\":\"sms\",\"message_status\":1,\"status_text\":\"sms_delivered\",\"to\":359888000240,\"from\":\"Capture\",\"timestamp\":1700000000}",
+        "header_names": [
+          "Accept-Encoding",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent"
+        ],
+        "signed": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "case": "refresh-json",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/refresh_token",
+    "headers": {},
+    "body": "{\"refresh_token\": \"{{refresh_token:client_a}}\", \"grant_type\": \"refresh_token\"}"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"access_token\":\"{{access_token:client_a(refreshed)}}\", \"refresh_token\":\"{{refresh_token:client_a(refreshed)}}\", \"token_type\":\"Bearer\", \"expires_in\":\"7200\"}"
+  },
+  "observed": {
+    "new_jti_differs": true,
+    "old_refresh_still_usable": 200
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "case": "send-no-carrier-callback",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/sms",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": "{\"to\": 359888000107, \"providerId\": 11, \"templateId\": 2, \"properties\": {}, \"sms\": {\"from\": \"Capture\", \"encoding\": \"utf-8\"}}"
+  },
+  "response": {
+    "status": 500,
+    "content_type": "application/json",
+    "body": "{\"code\":500, \"reason\":\"\", \"message\":\"voicecom: callback_url not configured\", \"metadata\":{}}"
+  }
+}

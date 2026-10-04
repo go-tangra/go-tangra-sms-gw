@@ -1,0 +1,16 @@
+{
+  "case": "list-page-beyond",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms?page=999&pageSize=50",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"items\":[], \"total\":13}"
+  }
+}

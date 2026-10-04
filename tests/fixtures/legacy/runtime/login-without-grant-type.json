@@ -1,0 +1,14 @@
+{
+  "case": "login-without-grant-type",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/login",
+    "headers": {},
+    "body": "{\"username\": \"client_l\", \"password\": \"Passw0rd!\"}"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"access_token\":\"{{unregistered_jwt}}\", \"refresh_token\":\"{{unregistered_jwt}}\", \"token_type\":\"Bearer\", \"expires_in\":\"7200\"}"
+  }
+}

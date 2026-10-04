@@ -1,0 +1,14 @@
+{
+  "case": "logout-no-token",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/logout",
+    "headers": {},
+    "body": "{}"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{}"
+  }
+}

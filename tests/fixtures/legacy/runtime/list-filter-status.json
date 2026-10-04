@@ -1,0 +1,16 @@
+{
+  "case": "list-filter-status",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms?query=%7B%22status%22%3A+2001%7D&pageSize=3",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"items\":[{\"id\":\"{{msg:send-carrier-reject}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000201\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"ping\", \"status\":2001, \"statusMessage\":\"sms_invalid_sid\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"fake-reject\", \"apiClientUsername\":\"client_a\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}], \"total\":1}"
+  }
+}

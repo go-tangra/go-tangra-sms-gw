@@ -1,0 +1,16 @@
+{
+  "case": "list-filter-recipient-prefix",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms?query=%7B%22recipient%22%3A+%2235988800010%22%7D&pageSize=3",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"items\":[{\"id\":\"{{msg:seq8}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000107\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"ping\", \"status\":500, \"statusMessage\":\"voicecom: callback_url not configured\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"mock-no-callback\", \"apiClientUsername\":\"client_a\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}, {\"id\":\"{{msg:send-unknown-field}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000106\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"ping\", \"status\":0, \"statusMessage\":\"sms_provider_accepted\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"mock-manual\", \"apiClientUsername\":\"client_a\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}, {\"id\":\"{{msg:send-missing-template-variable}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000105\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"Hello Bob, code <no value>.\", \"status\":0, \"statusMessage\":\"sms_provider_accepted\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"mock-manual\", \"apiClientUsername\":\"client_a\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}], \"total\":8}"
+  }
+}

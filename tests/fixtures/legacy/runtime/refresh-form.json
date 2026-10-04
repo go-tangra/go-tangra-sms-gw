@@ -1,0 +1,16 @@
+{
+  "case": "refresh-form",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/refresh_token",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    "body": "refresh_token={{refresh_token:client_b}}&grant_type=refresh_token"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"access_token\":\"{{access_token:client_b(refresh-form)}}\", \"refresh_token\":\"{{refresh_token:client_b(refresh-form)}}\", \"token_type\":\"Bearer\", \"expires_in\":\"7200\"}"
+  }
+}

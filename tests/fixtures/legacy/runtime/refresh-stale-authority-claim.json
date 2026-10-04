@@ -1,0 +1,18 @@
+{
+  "case": "refresh-stale-authority-claim",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/refresh_token",
+    "headers": {},
+    "body": "{\"refresh_token\": \"{{refresh_token:viewer_v}}\"}"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"access_token\":\"{{unregistered_jwt}}\", \"refresh_token\":\"{{unregistered_jwt}}\", \"token_type\":\"Bearer\", \"expires_in\":\"7200\"}"
+  },
+  "note": "Refresh reissues the authority claim from the old token, not from the database row",
+  "observed": {
+    "authority_after_db_change_to_API_CLIENT": "API_VIEWER"
+  }
+}

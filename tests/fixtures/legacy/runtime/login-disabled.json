@@ -1,0 +1,14 @@
+{
+  "case": "login-disabled",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/login",
+    "headers": {},
+    "body": "{\"username\": \"disabled_d\", \"password\": \"Passw0rd!\", \"grant_type\": \"password\"}"
+  },
+  "response": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": "{\"code\":401, \"reason\":\"UNAUTHORIZED\", \"message\":\"account disabled\", \"metadata\":{}}"
+  }
+}

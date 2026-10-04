@@ -1,0 +1,16 @@
+{
+  "case": "list-admin-filter-username",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms?query=%7B%22api_client_username%22%3A+%22client_b%22%7D",
+    "headers": {
+      "Authorization": "Bearer {{access_token:admin_x}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"items\":[{\"id\":\"{{msg:client_b}}\", \"owner\":2, \"sid\":9999, \"to\":\"359888000109\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"ping\", \"status\":0, \"statusMessage\":\"sms_provider_accepted\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"mock-manual\", \"apiClientUsername\":\"client_b\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}], \"total\":1}"
+  }
+}

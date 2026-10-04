@@ -1,0 +1,16 @@
+{
+  "case": "dlrs-roundtrip",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms/dlr/{{msg:roundtrip}}",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"items\":[{\"id\":\"7\", \"requestId\":\"{{msg:roundtrip}}\", \"channel\":\"sms\", \"sid\":9999, \"messageStatus\":1, \"to\":\"359888000222\", \"from\":\"Capture\", \"timestamp\":\"{{unix_seconds:carrier_dlr}}\", \"remoteAddrerss\":\"127.0.0.1\", \"statusText\":\"sms_delivered\", \"partsReceived\":1, \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}], \"total\":1}"
+  }
+}

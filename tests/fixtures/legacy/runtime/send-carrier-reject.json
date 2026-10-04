@@ -1,0 +1,50 @@
+{
+  "case": "send-carrier-reject",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/sms",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": "{\"to\": 359888000201, \"providerId\": 6, \"templateId\": 2, \"properties\": {}, \"sms\": {\"from\": \"Capture\", \"encoding\": \"utf-8\"}}"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"data\":{\"id\":\"{{msg:send-carrier-reject}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000201\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"ping\", \"status\":2001, \"statusMessage\":\"sms_invalid_sid\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"\", \"apiClientUsername\":\"\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}, \"endpointResponse\":{\"returnCode\":2001, \"returnMessage\":\"Invalid SID\", \"channels\":null}}"
+  },
+  "observed": {
+    "db_row": {
+      "id": "{{msg:send-carrier-reject}}",
+      "create_by": 1,
+      "sid": 9999,
+      "recipient": "359888000201",
+      "priority": 2,
+      "provider_id": 6,
+      "template_id": 2,
+      "defer": "",
+      "user_name": null,
+      "data": {
+        "sms": {
+          "from": "Capture",
+          "encoding": "utf-8"
+        },
+        "properties": {}
+      },
+      "dlr_ts": 0,
+      "status_code": 2001,
+      "message": "ping",
+      "status_message": "sms_invalid_sid",
+      "remote_address": "",
+      "raw_request": "POST /reject HTTP/1.1\r\nHost: 127.0.0.1:{{port}}\r\nUser-Agent: req/v3 (https://github.com/imroc/req)\r\nContent-Length: 221\r\nContent-Type: application/json; charset=utf-8\r\nAccept-Encoding: gzip\r\n\r\n{\"sid\":9999,\"request_id\":\"{{msg:send-carrier-reject}}\",\"to\":359888000201,\"send_order\":[\"sms\"],\"callback_url\":\"http://127.0.0.1:{{port}}/dlr\",\"sms\":{\"text\":\"ping\",\"encoding\":\"utf-8\",\"concatenate\":2,\"from\":\"Capture\"}}",
+      "raw_response": "HTTP/1.1 200 OK\r\nServer: BaseHTTP/0.6 Python/3.12.3\r\nDate: {{http_date}}\r\nContent-Type: application/json\r\nContent-Length: 51\r\n\r\n{\"return_code\":2001,\"return_message\":\"Invalid SID\"}",
+      "raw_request_storage": "gzip",
+      "raw_response_storage": "gzip"
+    },
+    "get_after": {
+      "status": 200,
+      "body": "{\"data\":{\"id\":\"{{msg:send-carrier-reject}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000201\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"ping\", \"status\":2001, \"statusMessage\":\"sms_invalid_sid\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"fake-reject\", \"apiClientUsername\":\"client_a\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}}"
+    },
+    "rows_for_recipient": 1
+  }
+}

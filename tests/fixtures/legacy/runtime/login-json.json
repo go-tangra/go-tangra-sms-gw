@@ -1,0 +1,14 @@
+{
+  "case": "login-json",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/login",
+    "headers": {},
+    "body": "{\"username\": \"client_a\", \"password\": \"Passw0rd!\", \"grant_type\": \"password\"}"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"access_token\":\"{{access_token:client_a}}\", \"refresh_token\":\"{{refresh_token:client_a}}\", \"token_type\":\"Bearer\", \"expires_in\":\"7200\"}"
+  }
+}

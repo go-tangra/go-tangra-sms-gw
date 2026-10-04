@@ -1,0 +1,86 @@
+{
+  "case": "send-roundtrip",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/sms",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": "{\"to\": 359888000222, \"providerId\": 1, \"templateId\": 1, \"properties\": {\"name\": \"Eve\", \"code\": \"1\"}, \"sms\": {\"from\": \"Capture\", \"encoding\": \"utf-8\"}}"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"data\":{\"id\":\"{{msg:roundtrip}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000222\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"Hello Eve, code 1.\", \"status\":0, \"statusMessage\":\"sms_provider_accepted\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"\", \"apiClientUsername\":\"\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}, \"endpointResponse\":{\"returnCode\":0, \"returnMessage\":\"Message accepted\", \"channels\":{\"sms\":{\"sendOrder\":1, \"messageParts\":1}, \"viber\":null}}}"
+  },
+  "observed": {
+    "db_row_after_carrier_dlr": {
+      "id": "{{msg:roundtrip}}",
+      "create_by": 1,
+      "sid": 9999,
+      "recipient": "359888000222",
+      "priority": 2,
+      "provider_id": 1,
+      "template_id": 1,
+      "defer": "",
+      "user_name": null,
+      "data": {
+        "sms": {
+          "from": "Capture",
+          "encoding": "utf-8"
+        },
+        "properties": {
+          "code": "1",
+          "name": "Eve"
+        }
+      },
+      "dlr_ts": "{{unix_seconds:carrier_dlr}}",
+      "status_code": 1,
+      "message": "Hello Eve, code 1.",
+      "status_message": "sms_delivered",
+      "remote_address": "",
+      "raw_request": "POST /multichannel-api/sendmulti/ HTTP/1.1\r\nHost: 127.0.0.1:{{port}}\r\nUser-Agent: req/v3 (https://github.com/imroc/req)\r\nContent-Length: 325\r\nContent-Type: application/json; charset=utf-8\r\nAccept-Encoding: gzip\r\n\r\n{\"sid\":9999,\"request_id\":\"{{msg:roundtrip}}\",\"to\":359888000222,\"token\":\"{{carrier_token}}\",\"send_order\":[\"sms\"],\"callback_url\":\"http://127.0.0.1:{{port}}/dlr?dlr_token={{dlr_token:auto}}\",\"sms\":{\"text\":\"Hello Eve, code 1.\",\"encoding\":\"utf-8\",\"concatenate\":2,\"from\":\"Capture\"}}",
+      "raw_response": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nDate: {{http_date}}\r\nContent-Length: 108\r\n\r\n{\"return_code\":0,\"return_message\":\"Message accepted\",\"channels\":{\"sms\":{\"send_order\":1,\"message_parts\":1}}}\n",
+      "raw_request_storage": "gzip",
+      "raw_response_storage": "gzip"
+    },
+    "dlr_rows": [
+      {
+        "id": 7,
+        "channel": "sms",
+        "sid": 9999,
+        "status_text": "sms_delivered",
+        "message_status": 1,
+        "recipient": 359888000222,
+        "sender": "Capture",
+        "timestamp": "{{unix_seconds:carrier_dlr}}",
+        "remote_address": "127.0.0.1",
+        "parts_received": 1
+      }
+    ],
+    "carrier_submission": {
+      "sid": 9999,
+      "request_id": "{{msg:roundtrip}}",
+      "to": 359888000222,
+      "token": "{{carrier_token}}",
+      "send_order": [
+        "sms"
+      ],
+      "callback_url": "http://127.0.0.1:{{port}}/dlr?dlr_token={{dlr_token:auto}}",
+      "sms": {
+        "text": "Hello Eve, code 1.",
+        "encoding": "utf-8",
+        "concatenate": 2,
+        "from": "Capture"
+      }
+    },
+    "carrier_dlr_callbacks": [
+      {
+        "url": "http://127.0.0.1:{{gw_port}}/dlr?channel=sms&dlr_token={{dlr_token:auto}}&from=Capture&message_status=1&request_id={{msg:roundtrip}}&sid=9999&timestamp={{unix_seconds:carrier_dlr}}&to=359888000222",
+        "message_status": 1,
+        "http_status": 200,
+        "body": "\"DLR_OK\""
+      }
+    ]
+  }
+}

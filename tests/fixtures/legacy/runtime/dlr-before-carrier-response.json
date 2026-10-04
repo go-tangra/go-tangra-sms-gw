@@ -1,0 +1,41 @@
+{
+  "case": "dlr-before-carrier-response",
+  "request": {
+    "method": "GET",
+    "path": "/dlr?request_id={{msg:slow-carrier}}&channel=sms&sid=9999&message_status=1&to=359888000210&from=Capture&timestamp=1700000000&dlr_token={{dlr_token:slow}}",
+    "headers": {},
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "\"DLR_OK\""
+  },
+  "observed": {
+    "db_row_after_dlr": {
+      "id": "{{msg:slow-carrier}}",
+      "create_by": 1,
+      "sid": 9999,
+      "recipient": "359888000210",
+      "priority": 2,
+      "provider_id": 9,
+      "template_id": 2,
+      "defer": "",
+      "user_name": null,
+      "data": {
+        "sms": {
+          "from": "Capture",
+          "encoding": "utf-8"
+        },
+        "properties": {}
+      },
+      "dlr_ts": 1700000000,
+      "status_code": 1,
+      "message": "ping",
+      "status_message": "sms_delivered",
+      "remote_address": "",
+      "raw_request": null,
+      "raw_response": null
+    }
+  }
+}

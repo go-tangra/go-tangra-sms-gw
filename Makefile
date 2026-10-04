@@ -1,4 +1,4 @@
-.PHONY: generate lint test test-integration build ui-build compose-up format capture-legacy
+.PHONY: generate lint test test-integration build ui-build compose-up format capture-legacy capture-legacy-runtime
 GO ?= go
 
 generate:
@@ -28,3 +28,6 @@ compose-up:
 
 capture-legacy:
 	python3 scripts/capture_legacy.py
+
+capture-legacy-runtime:
+	python3 scripts/capture_legacy_runtime.py

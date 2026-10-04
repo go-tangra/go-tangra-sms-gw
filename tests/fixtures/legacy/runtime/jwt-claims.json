@@ -1,0 +1,46 @@
+{
+  "case": "jwt-claims",
+  "note": "Decoded from login-json tokens; access and refresh share one jti",
+  "observed": {
+    "access": {
+      "header": {
+        "alg": "HS256",
+        "typ": "JWT"
+      },
+      "claims": {
+        "authority": "API_CLIENT",
+        "kind": "access",
+        "username": "client_a",
+        "iss": "sms-gw",
+        "sub": "1",
+        "exp": "{{unix_seconds}}",
+        "nbf": "{{unix_seconds}}",
+        "iat": "{{unix_seconds}}",
+        "jti": "{{jti:client_a}}",
+        "exp_minus_iat": 7200,
+        "nbf_equals_iat": true
+      }
+    },
+    "refresh": {
+      "header": {
+        "alg": "HS256",
+        "typ": "JWT"
+      },
+      "claims": {
+        "authority": "API_CLIENT",
+        "kind": "refresh",
+        "username": "client_a",
+        "iss": "sms-gw",
+        "sub": "1",
+        "exp": "{{unix_seconds}}",
+        "nbf": "{{unix_seconds}}",
+        "iat": "{{unix_seconds}}",
+        "jti": "{{jti:client_a}}",
+        "exp_minus_iat": 604800,
+        "nbf_equals_iat": true
+      }
+    },
+    "same_jti": true,
+    "jti_hex_len": 32
+  }
+}

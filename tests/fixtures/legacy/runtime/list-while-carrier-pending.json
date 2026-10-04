@@ -1,0 +1,16 @@
+{
+  "case": "list-while-carrier-pending",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms?query=%7B%22recipient%22%3A+%22359888000210%22%7D",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"items\":[{\"id\":\"{{msg:slow-carrier}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000210\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"ping\", \"status\":4294967295, \"statusMessage\":\"sms_gw_accepted\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"fake-slow\", \"apiClientUsername\":\"client_a\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}], \"total\":1}"
+  }
+}

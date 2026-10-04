@@ -1,0 +1,14 @@
+{
+  "case": "refresh-unknown-client",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/refresh_token",
+    "headers": {},
+    "body": "{\"refresh_token\": \"{{forged_jwt:refresh-unknown-client}}\"}"
+  },
+  "response": {
+    "status": 404,
+    "content_type": "application/json",
+    "body": "{\"code\":404, \"reason\":\"RECORD_NOT_FOUND\", \"message\":\"api client not found\", \"metadata\":{}}"
+  }
+}

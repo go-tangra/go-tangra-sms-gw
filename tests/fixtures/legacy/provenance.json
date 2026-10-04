@@ -1,6 +1,6 @@
 {
   "source": "../go-tangra-sms-gw",
-  "capture": "source contracts; runtime capture pending isolated database",
+  "capture": "source contracts, codec goldens and database-backed runtime recordings",
   "files": [
     {
       "path": "protos/sms_gw/service/v1/sms.proto",
@@ -66,5 +66,14 @@
       "path": "internal/webhook/dispatcher.go",
       "sha256": "97e454fdf1e59dc7dec6cc45335fd44656286c5f90b62f8a00ed8568f57e4efc"
     }
-  ]
+  ],
+  "runtime": {
+    "directory": "runtime",
+    "source_commit": "30b92c16e4028ac8a7610afd35a0c841d3f14af8",
+    "source_dirty": false,
+    "captured_at": "2026-10-04",
+    "harness": "scripts/capture_legacy_runtime.py",
+    "database": "isolated postgres:16 container, ent auto-migration",
+    "carriers": "legacy test-linkmobility mock plus in-process failure fake; no real carrier"
+  }
 }

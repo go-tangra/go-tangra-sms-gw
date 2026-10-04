@@ -1,0 +1,16 @@
+{
+  "case": "get-own",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms/{{msg:send-hermes}}",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"data\":{\"id\":\"{{msg:send-hermes}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000100\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"Hello Alice, code 8421.\", \"status\":0, \"statusMessage\":\"sms_provider_accepted\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"mock-manual\", \"apiClientUsername\":\"client_a\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}}"
+  }
+}

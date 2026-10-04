@@ -1,0 +1,30 @@
+{
+  "case": "dlr-duplicate-intermediate",
+  "request": {
+    "method": "GET",
+    "path": "/dlr?request_id={{msg:receipts}}&channel=sms&sid=9999&to=359888000220&from=Capture&timestamp=1700000005&dlr_token={{dlr_token:manual}}&message_status=8",
+    "headers": {},
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "\"DLR_OK\""
+  },
+  "observed": {
+    "dlr_rows": [
+      {
+        "id": 2,
+        "channel": "sms",
+        "sid": 9999,
+        "status_text": "sms_smsc_delivered",
+        "message_status": 8,
+        "recipient": 359888000220,
+        "sender": "Capture",
+        "timestamp": 1700000000,
+        "remote_address": "127.0.0.1",
+        "parts_received": 2
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "case": "list-unknown-authority",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms",
+    "headers": {
+      "Authorization": "Bearer {{forged_jwt:authority-ROOT}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"items\":[], \"total\":0}"
+  }
+}

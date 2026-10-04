@@ -1,0 +1,16 @@
+{
+  "case": "send-unknown-field",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/sms",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": "{\"to\": 359888000106, \"providerId\": 2, \"templateId\": 2, \"properties\": {}, \"sms\": {\"from\": \"Capture\", \"encoding\": \"utf-8\"}, \"text\": \"free text ignored\", \"defer\": \"2030-01-01\"}"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"data\":{\"id\":\"{{msg:send-unknown-field}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000106\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"ping\", \"status\":0, \"statusMessage\":\"sms_provider_accepted\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"\", \"apiClientUsername\":\"\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}, \"endpointResponse\":{\"returnCode\":0, \"returnMessage\":\"Message accepted\", \"channels\":{\"sms\":{\"sendOrder\":1, \"messageParts\":1}, \"viber\":null}}}"
+  }
+}

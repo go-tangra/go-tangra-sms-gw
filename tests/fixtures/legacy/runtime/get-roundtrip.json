@@ -1,0 +1,16 @@
+{
+  "case": "get-roundtrip",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms/{{msg:roundtrip}}",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"data\":{\"id\":\"{{msg:roundtrip}}\", \"owner\":1, \"sid\":9999, \"to\":\"359888000222\", \"priority\":2, \"defer\":\"\", \"sms\":null, \"text\":\"Hello Eve, code 1.\", \"status\":1, \"statusMessage\":\"sms_delivered\", \"rawResponse\":\"\", \"rawRequest\":\"\", \"userName\":\"\", \"providerId\":0, \"providerName\":\"mock-auto\", \"apiClientUsername\":\"client_a\", \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}}"
+  }
+}

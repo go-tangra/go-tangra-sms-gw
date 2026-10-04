@@ -1,0 +1,14 @@
+{
+  "case": "refresh-with-access-token",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/refresh_token",
+    "headers": {},
+    "body": "{\"refresh_token\": \"{{access_token:client_a}}\"}"
+  },
+  "response": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": "{\"code\":401, \"reason\":\"UNAUTHORIZED\", \"message\":\"wrong token kind\", \"metadata\":{}}"
+  }
+}

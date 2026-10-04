@@ -1,0 +1,16 @@
+{
+  "case": "dlrs-own",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms/dlr/{{msg:receipts}}",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"items\":[{\"id\":\"2\", \"requestId\":\"{{msg:receipts}}\", \"channel\":\"sms\", \"sid\":9999, \"messageStatus\":8, \"to\":\"359888000220\", \"from\":\"Capture\", \"timestamp\":\"1700000000\", \"remoteAddrerss\":\"127.0.0.1\", \"statusText\":\"sms_smsc_delivered\", \"partsReceived\":2, \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}, {\"id\":\"3\", \"requestId\":\"{{msg:receipts}}\", \"channel\":\"sms\", \"sid\":9999, \"messageStatus\":1, \"to\":\"359888000220\", \"from\":\"Capture\", \"timestamp\":\"1700000010\", \"remoteAddrerss\":\"127.0.0.1\", \"statusText\":\"sms_delivered\", \"partsReceived\":1, \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}, {\"id\":\"4\", \"requestId\":\"{{msg:receipts}}\", \"channel\":\"sms\", \"sid\":9999, \"messageStatus\":2, \"to\":\"359888000220\", \"from\":\"Capture\", \"timestamp\":\"1700000020\", \"remoteAddrerss\":\"127.0.0.1\", \"statusText\":\"sms_delivery_failed\", \"partsReceived\":1, \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}, {\"id\":\"5\", \"requestId\":\"{{msg:receipts}}\", \"channel\":\"sms\", \"sid\":9999, \"messageStatus\":77, \"to\":\"359888000220\", \"from\":\"Capture\", \"timestamp\":\"1700000000\", \"remoteAddrerss\":\"127.0.0.1\", \"statusText\":\"\", \"partsReceived\":1, \"createTime\":\"{{rfc3339}}\", \"updateTime\":\"{{rfc3339}}\"}], \"total\":4}"
+  }
+}

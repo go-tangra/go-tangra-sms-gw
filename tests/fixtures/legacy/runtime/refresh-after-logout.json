@@ -1,0 +1,14 @@
+{
+  "case": "refresh-after-logout",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/refresh_token",
+    "headers": {},
+    "body": "{\"refresh_token\": \"{{refresh_token:client_s}}\"}"
+  },
+  "response": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": "{\"code\":401, \"reason\":\"UNAUTHORIZED\", \"message\":\"invalid token\", \"metadata\":{}}"
+  }
+}

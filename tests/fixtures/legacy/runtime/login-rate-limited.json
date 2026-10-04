@@ -1,0 +1,24 @@
+{
+  "case": "login-rate-limited",
+  "note": "Default SMS_GW_LOGIN_RPM=10 burst 5, keyed by client IP",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/login"
+  },
+  "response": {
+    "status": 429,
+    "content_type": "application/json",
+    "body": "{\"code\":429, \"reason\":\"TOO_MANY_REQUESTS\", \"message\":\"rate limit exceeded for 127.0.0.1\", \"metadata\":{}}"
+  },
+  "observed": {
+    "statuses_in_order": [
+      200,
+      200,
+      200,
+      200,
+      200,
+      429,
+      429
+    ]
+  }
+}

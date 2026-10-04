@@ -1,0 +1,16 @@
+{
+  "case": "dlrs-foreign",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms/dlr/{{msg:receipts}}",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_b}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 404,
+    "content_type": "application/json",
+    "body": "{\"code\":404, \"reason\":\"RECORD_NOT_FOUND\", \"message\":\"sms not found\", \"metadata\":{}}"
+  }
+}

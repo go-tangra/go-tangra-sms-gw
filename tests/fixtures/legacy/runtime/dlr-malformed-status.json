@@ -1,0 +1,14 @@
+{
+  "case": "dlr-malformed-status",
+  "request": {
+    "method": "GET",
+    "path": "/dlr?request_id={{msg:receipts}}&channel=sms&sid=9999&to=359888000220&from=Capture&timestamp=1700000000&dlr_token={{dlr_token:manual}}&message_status=delivered",
+    "headers": {},
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "\"DLR_OK\""
+  }
+}

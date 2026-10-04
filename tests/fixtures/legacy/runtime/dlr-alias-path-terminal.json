@@ -1,0 +1,43 @@
+{
+  "case": "dlr-alias-path-terminal",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms/dlr?request_id={{msg:receipts}}&channel=sms&sid=9999&to=359888000220&from=Capture&timestamp=1700000010&dlr_token={{dlr_token:manual}}&message_status=1",
+    "headers": {},
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "\"DLR_OK\""
+  },
+  "observed": {
+    "db_row": {
+      "id": "{{msg:receipts}}",
+      "create_by": 1,
+      "sid": 9999,
+      "recipient": "359888000220",
+      "priority": 2,
+      "provider_id": 2,
+      "template_id": 2,
+      "defer": "",
+      "user_name": null,
+      "data": {
+        "sms": {
+          "from": "Capture",
+          "encoding": "utf-8"
+        },
+        "properties": {}
+      },
+      "dlr_ts": 1700000010,
+      "status_code": 1,
+      "message": "ping",
+      "status_message": "sms_delivered",
+      "remote_address": "",
+      "raw_request": "POST /multichannel-api/sendmulti/ HTTP/1.1\r\nHost: 127.0.0.1:{{port}}\r\nUser-Agent: req/v3 (https://github.com/imroc/req)\r\nContent-Length: 264\r\nContent-Type: application/json; charset=utf-8\r\nAccept-Encoding: gzip\r\n\r\n{\"sid\":9999,\"request_id\":\"{{msg:receipts}}\",\"to\":359888000220,\"send_order\":[\"sms\"],\"callback_url\":\"http://127.0.0.1:{{port}}/dlr?dlr_token={{dlr_token:manual}}\",\"sms\":{\"text\":\"ping\",\"encoding\":\"utf-8\",\"concatenate\":2,\"from\":\"Capture\"}}",
+      "raw_response": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nDate: {{http_date}}\r\nContent-Length: 108\r\n\r\n{\"return_code\":0,\"return_message\":\"Message accepted\",\"channels\":{\"sms\":{\"send_order\":1,\"message_parts\":1}}}\n",
+      "raw_request_storage": "gzip",
+      "raw_response_storage": "gzip"
+    }
+  }
+}

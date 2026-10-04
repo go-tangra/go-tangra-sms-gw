@@ -1,0 +1,31 @@
+{
+  "case": "webhook-retry-on-500",
+  "observed": {
+    "attempts": 6,
+    "gaps_seconds": [
+      0.2,
+      0.4,
+      0.8,
+      1.6,
+      3.2
+    ],
+    "first": {
+      "path": "/fail/f",
+      "content_type": "application/json",
+      "body": "{\"message_id\":\"{{msg:webhook-359888000241}}\",\"channel\":\"sms\",\"message_status\":1,\"status_text\":\"sms_delivered\",\"to\":359888000241,\"from\":\"Capture\",\"timestamp\":1700000000}",
+      "header_names": [
+        "Accept-Encoding",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent",
+        "X-Smsgw-Signature",
+        "X-Smsgw-Timestamp"
+      ],
+      "signed": true,
+      "signature_valid": true,
+      "signature_hex_len": 64,
+      "timestamp_is_unix_seconds": true
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "case": "me-refresh-token-as-access",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/me",
+    "headers": {
+      "Authorization": "Bearer {{refresh_token:client_a}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": "{\"code\":401, \"reason\":\"UNAUTHORIZED\", \"message\":\"wrong token kind\", \"metadata\":{}}"
+  }
+}

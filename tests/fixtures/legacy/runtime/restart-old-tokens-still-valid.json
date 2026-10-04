@@ -1,0 +1,16 @@
+{
+  "case": "restart-old-tokens-still-valid",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/me",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"user\":{\"id\":1, \"username\":\"client_a\", \"email\":\"client_a@example.invalid\", \"authority\":\"API_CLIENT\"}, \"abilities\":[{\"action\":\"create\", \"subject\":\"sms\"}, {\"action\":\"list\", \"subject\":\"sms\"}, {\"action\":\"get\", \"subject\":\"sms\"}, {\"action\":\"get\", \"subject\":\"dlr\"}]}"
+  }
+}

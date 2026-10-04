@@ -1,0 +1,21 @@
+{
+  "case": "logout-expired-access-with-refresh",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/logout",
+    "headers": {
+      "Authorization": "Bearer {{forged_jwt:expired-access-client_l}}",
+      "X-Refresh-Token": "{{refresh_token:client_l}}"
+    },
+    "body": "{\"id\": 1}"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{}"
+  },
+  "observed": {
+    "refresh_after": 401,
+    "access_after_shared_jti": 401
+  }
+}

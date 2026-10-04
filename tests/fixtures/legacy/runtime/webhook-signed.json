@@ -1,0 +1,83 @@
+{
+  "case": "webhook-signed",
+  "note": "Outbound callbacks for client_a (secret configured); one per accepted receipt, including duplicates",
+  "observed": {
+    "deliveries_total": 108,
+    "all_signatures_valid": true,
+    "all_signed": true,
+    "examples": [
+      {
+        "path": "/ok/a",
+        "content_type": "application/json",
+        "body": "{\"message_id\":\"{{msg:slow-carrier}}\",\"channel\":\"sms\",\"message_status\":1,\"status_text\":\"sms_delivered\",\"to\":359888000210,\"from\":\"Capture\",\"timestamp\":1700000000}",
+        "header_names": [
+          "Accept-Encoding",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "X-Smsgw-Signature",
+          "X-Smsgw-Timestamp"
+        ],
+        "signed": true,
+        "signature_valid": true,
+        "signature_hex_len": 64,
+        "timestamp_is_unix_seconds": true
+      },
+      {
+        "path": "/ok/a",
+        "content_type": "application/json",
+        "body": "{\"message_id\":\"{{msg:receipts}}\",\"channel\":\"sms\",\"message_status\":8,\"status_text\":\"sms_smsc_delivered\",\"to\":359888000220,\"from\":\"Capture\",\"timestamp\":1700000000}",
+        "header_names": [
+          "Accept-Encoding",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "X-Smsgw-Signature",
+          "X-Smsgw-Timestamp"
+        ],
+        "signed": true,
+        "signature_valid": true,
+        "signature_hex_len": 64,
+        "timestamp_is_unix_seconds": true
+      },
+      {
+        "path": "/ok/a",
+        "content_type": "application/json",
+        "body": "{\"message_id\":\"{{msg:receipts}}\",\"channel\":\"sms\",\"message_status\":8,\"status_text\":\"sms_smsc_delivered\",\"to\":359888000220,\"from\":\"Capture\",\"timestamp\":1700000005}",
+        "header_names": [
+          "Accept-Encoding",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "X-Smsgw-Signature",
+          "X-Smsgw-Timestamp"
+        ],
+        "signed": true,
+        "signature_valid": true,
+        "signature_hex_len": 64,
+        "timestamp_is_unix_seconds": true
+      },
+      {
+        "path": "/ok/a",
+        "content_type": "application/json",
+        "body": "{\"message_id\":\"{{msg:receipts}}\",\"channel\":\"sms\",\"message_status\":1,\"status_text\":\"sms_delivered\",\"to\":359888000220,\"from\":\"Capture\",\"timestamp\":1700000010}",
+        "header_names": [
+          "Accept-Encoding",
+          "Content-Length",
+          "Content-Type",
+          "Host",
+          "User-Agent",
+          "X-Smsgw-Signature",
+          "X-Smsgw-Timestamp"
+        ],
+        "signed": true,
+        "signature_valid": true,
+        "signature_hex_len": 64,
+        "timestamp_is_unix_seconds": true
+      }
+    ]
+  }
+}

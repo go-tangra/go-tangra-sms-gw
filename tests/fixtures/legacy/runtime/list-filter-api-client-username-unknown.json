@@ -1,0 +1,16 @@
+{
+  "case": "list-filter-api-client-username-unknown",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms?query=%7B%22api_client_username%22%3A+%22nobody%22%7D&pageSize=3",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_a}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"items\":[], \"total\":0}"
+  }
+}

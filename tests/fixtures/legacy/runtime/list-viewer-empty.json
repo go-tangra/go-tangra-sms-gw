@@ -1,0 +1,16 @@
+{
+  "case": "list-viewer-empty",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/sms",
+    "headers": {
+      "Authorization": "Bearer {{access_token:viewer_v}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"items\":[], \"total\":0}"
+  }
+}

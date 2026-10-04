@@ -1,0 +1,43 @@
+{
+  "case": "dlr-provider-without-token-accepts-any",
+  "request": {
+    "method": "GET",
+    "path": "/dlr?request_id={{msg:legacy-provider}}&channel=sms&sid=9999&to=359888000221&from=Capture&timestamp=1700000000&dlr_token=anything&message_status=1",
+    "headers": {},
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "\"DLR_OK\""
+  },
+  "observed": {
+    "db_row": {
+      "id": "{{msg:legacy-provider}}",
+      "create_by": 1,
+      "sid": 9999,
+      "recipient": "359888000221",
+      "priority": 2,
+      "provider_id": 3,
+      "template_id": 2,
+      "defer": "",
+      "user_name": null,
+      "data": {
+        "sms": {
+          "from": "Capture",
+          "encoding": "utf-8"
+        },
+        "properties": {}
+      },
+      "dlr_ts": 1700000000,
+      "status_code": 1,
+      "message": "ping",
+      "status_message": "sms_delivered",
+      "remote_address": "",
+      "raw_request": "POST /multichannel-api/sendmulti/ HTTP/1.1\r\nHost: 127.0.0.1:{{port}}\r\nUser-Agent: req/v3 (https://github.com/imroc/req)\r\nContent-Length: 221\r\nContent-Type: application/json; charset=utf-8\r\nAccept-Encoding: gzip\r\n\r\n{\"sid\":9999,\"request_id\":\"{{msg:legacy-provider}}\",\"to\":359888000221,\"send_order\":[\"sms\"],\"callback_url\":\"http://127.0.0.1:{{port}}/dlr\",\"sms\":{\"text\":\"ping\",\"encoding\":\"utf-8\",\"concatenate\":2,\"from\":\"Capture\"}}",
+      "raw_response": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nDate: {{http_date}}\r\nContent-Length: 108\r\n\r\n{\"return_code\":0,\"return_message\":\"Message accepted\",\"channels\":{\"sms\":{\"send_order\":1,\"message_parts\":1}}}\n",
+      "raw_request_storage": "gzip",
+      "raw_response_storage": "gzip"
+    }
+  }
+}

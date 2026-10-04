@@ -1,0 +1,27 @@
+{
+  "case": "webhook-redirect-not-followed",
+  "observed": {
+    "attempts": 6,
+    "gaps_seconds": [
+      0.2,
+      0.4,
+      0.8,
+      1.6,
+      3.2
+    ],
+    "first": {
+      "path": "/redirect/r",
+      "content_type": "application/json",
+      "body": "{\"message_id\":\"{{msg:webhook-359888000242}}\",\"channel\":\"sms\",\"message_status\":1,\"status_text\":\"sms_delivered\",\"to\":359888000242,\"from\":\"Capture\",\"timestamp\":1700000000}",
+      "header_names": [
+        "Accept-Encoding",
+        "Content-Length",
+        "Content-Type",
+        "Host",
+        "User-Agent"
+      ],
+      "signed": false
+    },
+    "redirect_target_hits": 0
+  }
+}

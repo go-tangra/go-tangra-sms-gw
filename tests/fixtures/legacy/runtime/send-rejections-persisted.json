@@ -1,0 +1,7 @@
+{
+  "case": "send-rejections-persisted",
+  "note": "Rows created by the rejected sends above (unknown provider type and bad template syntax included)",
+  "observed": {
+    "rows_created": 0
+  }
+}

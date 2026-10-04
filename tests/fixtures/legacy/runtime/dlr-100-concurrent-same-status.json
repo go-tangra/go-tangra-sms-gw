@@ -1,0 +1,50 @@
+{
+  "case": "dlr-100-concurrent-same-status",
+  "note": "Nondeterministic: legacy read-then-insert/increment is not atomic, so concurrent duplicates may be lost or fail on the unique index",
+  "observed": {
+    "http_statuses": [
+      200
+    ],
+    "dlr_rows": [
+      {
+        "id": 8,
+        "channel": "sms",
+        "sid": 9999,
+        "status_text": "sms_smsc_delivered",
+        "message_status": 8,
+        "recipient": 359888000230,
+        "sender": "Capture",
+        "timestamp": 1700000000,
+        "remote_address": "127.0.0.1",
+        "parts_received": 100
+      }
+    ],
+    "db_row": {
+      "id": "{{msg:concurrency}}",
+      "create_by": 1,
+      "sid": 9999,
+      "recipient": "359888000230",
+      "priority": 2,
+      "provider_id": 2,
+      "template_id": 2,
+      "defer": "",
+      "user_name": null,
+      "data": {
+        "sms": {
+          "from": "Capture",
+          "encoding": "utf-8"
+        },
+        "properties": {}
+      },
+      "dlr_ts": 1700000000,
+      "status_code": 8,
+      "message": "ping",
+      "status_message": "sms_smsc_delivered",
+      "remote_address": "",
+      "raw_request": "POST /multichannel-api/sendmulti/ HTTP/1.1\r\nHost: 127.0.0.1:{{port}}\r\nUser-Agent: req/v3 (https://github.com/imroc/req)\r\nContent-Length: 264\r\nContent-Type: application/json; charset=utf-8\r\nAccept-Encoding: gzip\r\n\r\n{\"sid\":9999,\"request_id\":\"{{msg:concurrency}}\",\"to\":359888000230,\"send_order\":[\"sms\"],\"callback_url\":\"http://127.0.0.1:{{port}}/dlr?dlr_token={{dlr_token:manual}}\",\"sms\":{\"text\":\"ping\",\"encoding\":\"utf-8\",\"concatenate\":2,\"from\":\"Capture\"}}",
+      "raw_response": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nDate: {{http_date}}\r\nContent-Length: 108\r\n\r\n{\"return_code\":0,\"return_message\":\"Message accepted\",\"channels\":{\"sms\":{\"send_order\":1,\"message_parts\":1}}}\n",
+      "raw_request_storage": "gzip",
+      "raw_response_storage": "gzip"
+    }
+  }
+}

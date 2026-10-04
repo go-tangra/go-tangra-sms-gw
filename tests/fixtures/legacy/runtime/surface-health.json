@@ -1,0 +1,14 @@
+{
+  "case": "surface-health",
+  "request": {
+    "method": "GET",
+    "path": "/health",
+    "headers": {},
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"status\":\"ok\"}\n"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "case": "me-unknown-client-id",
+  "request": {
+    "method": "GET",
+    "path": "/hermes/v1/me",
+    "headers": {
+      "Authorization": "Bearer {{forged_jwt:me-unknown-client-id}}"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 404,
+    "content_type": "application/json",
+    "body": "{\"code\":404, \"reason\":\"RECORD_NOT_FOUND\", \"message\":\"api client not found\", \"metadata\":{}}"
+  },
+  "note": "Token forged with the capture secret (see case name)"
+}

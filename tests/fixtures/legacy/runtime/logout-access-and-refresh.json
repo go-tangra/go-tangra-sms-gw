@@ -1,0 +1,17 @@
+{
+  "case": "logout-access-and-refresh",
+  "request": {
+    "method": "POST",
+    "path": "/hermes/v1/logout",
+    "headers": {
+      "Authorization": "Bearer {{access_token:client_s}}",
+      "X-Refresh-Token": "{{refresh_token:client_s}}"
+    },
+    "body": "{}"
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{}"
+  }
+}
