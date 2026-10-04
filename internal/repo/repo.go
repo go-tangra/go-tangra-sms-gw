@@ -334,6 +334,9 @@ type Messages interface {
 type Receipts interface {
 	AddReceipt(ctx context.Context, r Receipt) (Receipt, error)
 	ListReceipts(ctx context.Context, v View, messageID string) (List[Receipt], error)
+	// ApplyReceipt aggregates a carrier receipt and applies its status
+	// atomically (r.TenantID comes from the resolved message).
+	ApplyReceipt(ctx context.Context, r Receipt) (ReceiptResult, error)
 }
 
 // Logins persists Hermes login attempts.

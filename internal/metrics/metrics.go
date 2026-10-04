@@ -24,7 +24,7 @@ var (
 	webhookOutcomes = set("delivered", "failed", "dropped")
 	loginOutcomes   = set("success", "invalid_credentials", "disabled", "bad_request", "rate_limited", "error")
 	runOutcomes     = set("ok", "error")
-	rejectReasons   = set("bad_token", "unknown_message", "malformed", "rate_limited")
+	rejectReasons   = set("bad_token", "unknown_message", "malformed", "rate_limited", "unavailable")
 	providerTypeRE  = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
 	// Receipt codes of the Voicecom status table; anything else is "other".
 	receiptCodes = map[uint32]bool{0: true, 1: true, 2: true, 8: true, 16: true, 1000: true, 1001: true, 1002: true, 2000: true, 2001: true,
