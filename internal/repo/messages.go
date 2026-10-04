@@ -132,15 +132,17 @@ func (p *Postgres) ListMessages(ctx context.Context, v View, f MessageFilter, pg
 		add("m.api_client_id = (SELECT id FROM sms_api_client u WHERE u.tenant_id = m.tenant_id AND u.username = ?)", f.APIClientUsername)
 	}
 	cond := " WHERE " + strings.Join(where, " AND ")
-	order := " ORDER BY m.create_time DESC, m.id DESC"
+	order := "m.create_time DESC, m.id DESC"
 	if f.Oldest {
-		order = " ORDER BY m.create_time, m.id"
+		order = "m.create_time, m.id"
 	}
-	limit, offset := p.bounds(pg)
+	order = " ORDER BY " + orderBy(MessageList, pg, order)
 	err = p.tenantTx(ctx, v.tenant, func(t *Tx) error {
 		if err := t.tx.QueryRow(ctx, "SELECT count(*) FROM sms_message m"+cond, args...).Scan(&out.Total); err != nil {
 			return err
 		}
+		limit, offset := p.bounds(p.clamp(pg, out.Total))
+		out.Page = offset/limit + 1
 		n := len(args)
 		out.Items, err = scanAll(scanMessage)(t.tx.Query(ctx, messageList+cond+order+fmt.Sprintf(" LIMIT $%d OFFSET $%d", n+1, n+2), append(args, limit, offset)...))
 		return err

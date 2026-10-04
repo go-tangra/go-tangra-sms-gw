@@ -2,6 +2,7 @@ package provider
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 )
@@ -93,6 +94,20 @@ func MetaFor(typ string) (TypeMeta, bool) {
 // secretNames are credential keys of any provider configuration, including
 // unregistered legacy types (the legacy SecretConfigKeys).
 var secretNames = []string{"token", "password", "secret", "api_key", "apikey", "auth", "dlr_token"}
+
+// SecretKeys lists the credential keys of a configuration of typ: the
+// type's secret fields and the legacy credential names.
+func SecretKeys(typ string) []string {
+	keys := append([]string(nil), secretNames...)
+	if m, ok := MetaFor(typ); ok {
+		for _, k := range m.Secrets() {
+			if !slices.Contains(keys, k) {
+				keys = append(keys, k)
+			}
+		}
+	}
+	return keys
+}
 
 // SecretValues returns the credential values in a configuration, for
 // scrubbing evidence and errors.

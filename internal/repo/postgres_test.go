@@ -487,3 +487,55 @@ func TestImportRuns(t *testing.T) {
 		t.Fatalf("second successful apply of one source: %v", err)
 	}
 }
+
+// TestManagementListsAndSealedCreate covers the management list contract
+// (sorting from the spec only, search, last-page clamp) and sealed creates
+// bound to the assigned row id.
+func TestManagementListsAndSealedCreate(t *testing.T) {
+	f := seed(t)
+	ctx := context.Background()
+	var sealedFor []int64
+	for _, name := range []string{"Zeta", "alpha", "Mid_dle%"} {
+		p, err := f.r.CreateProviderSealed(ctx, repo.Provider{TenantID: tenantA, Name: name, Type: "voicecom", ObjectType: repo.ObjectSMS, Status: repo.On},
+			func(id int64) ([]byte, error) { sealedFor = append(sealedFor, id); return []byte("cfg-" + name), nil })
+		if err != nil || string(p.ConfigSealed) != "cfg-"+name || p.ID != sealedFor[len(sealedFor)-1] {
+			t.Fatalf("%+v %v", p, err)
+		}
+	}
+	if _, err := f.r.CreateProviderSealed(ctx, repo.Provider{TenantID: tenantA, Name: "fails", Type: "voicecom", ObjectType: repo.ObjectSMS, Status: repo.On},
+		func(int64) ([]byte, error) { return nil, errors.New("kek") }); err == nil {
+		t.Fatal("seal failure ignored")
+	}
+	l, err := f.r.ListProviders(ctx, tenantA, repo.Page{Sort: "name", Size: 2})
+	if err != nil || l.Total != 4 || len(l.Items) != 2 || l.Items[0].Name != "alpha" || l.Items[1].Name != "carrier" || l.Page != 1 {
+		t.Fatalf("%+v %v", l, err)
+	}
+	if l, _ = f.r.ListProviders(ctx, tenantA, repo.Page{Sort: "name", Desc: true, Size: 2, Page: 99}); l.Page != 2 || len(l.Items) != 2 || l.Items[1].Name != "alpha" {
+		t.Fatalf("clamp: %+v", l)
+	}
+	if l, _ = f.r.ListProviders(ctx, tenantA, repo.Page{Sort: "name", Search: "LE%"}); l.Total != 1 || l.Items[0].Name != "Mid_dle%" {
+		t.Fatalf("search: %+v", l)
+	}
+	if l, _ = f.r.ListProviders(ctx, tenantA, repo.Page{Sort: "name; DROP TABLE sms_provider", Search: "_"}); l.Total != 1 {
+		t.Fatalf("escaped search / unknown sort: %+v", l)
+	}
+	if l, _ = f.r.ListProviders(ctx, tenantB, repo.Page{Sort: "name", Search: "a"}); l.Total != 1 {
+		t.Fatalf("tenant B: %+v", l)
+	}
+	c, err := f.r.CreateClientSealed(ctx, repo.APIClient{TenantID: tenantB, Username: "sealed_client", PasswordHash: "$2a$10$hash", Authority: "API_CLIENT", Status: repo.On},
+		func(id int64) ([]byte, error) { return nil, nil })
+	if err != nil || c.CallbackSecretSealed != nil {
+		t.Fatalf("%+v %v", c, err)
+	}
+	if cl, _ := f.r.ListClients(ctx, tenantA, repo.Page{Sort: "username", Desc: true}); cl.Total != 2 || cl.Items[0].Username != "client_a2" {
+		t.Fatalf("%+v", cl)
+	}
+	tid := f.tplA.ID
+	for _, rcp := range []string{"359888000003", "359888000001", "359888000002"} {
+		f.message(t, tenantA, f.provA.ID, &tid, repo.PlatformActor("op"), rcp)
+	}
+	ml, err := f.r.ListMessages(ctx, repo.TenantView(tenantA), repo.MessageFilter{}, repo.Page{Sort: "recipient"})
+	if err != nil || ml.Total != 3 || ml.Items[0].Recipient != "359888000001" || ml.Items[2].Recipient != "359888000003" {
+		t.Fatalf("%+v %v", ml, err)
+	}
+}

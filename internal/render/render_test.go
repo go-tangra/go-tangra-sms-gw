@@ -80,3 +80,16 @@ func TestParts(t *testing.T) {
 		t.Fatal(Characters("Мария😀"))
 	}
 }
+
+func TestVariables(t *testing.T) {
+	got, err := Variables("t", `Hi {{.name}}, code {{.code}}{{if .vip}} ({{printf "%s" .tier}}){{end}} {{.name}}`)
+	if err != nil || strings.Join(got, ",") != "code,name,tier,vip" {
+		t.Fatalf("%v %v", got, err)
+	}
+	if v, err := Variables("t", "plain"); err != nil || len(v) != 0 {
+		t.Fatalf("%v %v", v, err)
+	}
+	if _, err := Variables("t", "{{.x"); err == nil || !strings.HasPrefix(err.Error(), "parse template:") {
+		t.Fatalf("%v", err)
+	}
+}

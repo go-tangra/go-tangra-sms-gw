@@ -8,9 +8,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"text/template"
+	"text/template/parse"
 )
 
 // Bounds.
@@ -82,4 +85,64 @@ func Render(name, body string, props map[string]string) (string, error) {
 		return "", &Error{"execute", err}
 	}
 	return out.buf.String(), nil
+}
+
+// Variables lists the properties body refers to ({{.name}}), sorted and
+// unique; a template that does not parse is an *Error.
+func Variables(name, body string) ([]string, error) {
+	if len(body) > MaxTemplateBytes {
+		return nil, &Error{"parse", errors.New("template exceeds the size limit")}
+	}
+	tpl, err := template.New(name).Funcs(funcs).Parse(body)
+	if err != nil {
+		return nil, &Error{"parse", err}
+	}
+	seen := map[string]bool{}
+	var walk func(parse.Node)
+	walk = func(n parse.Node) {
+		if n == nil || reflect.ValueOf(n).IsNil() {
+			return
+		}
+		switch x := n.(type) {
+		case *parse.ListNode:
+			for _, c := range x.Nodes {
+				walk(c)
+			}
+		case *parse.ActionNode:
+			walk(x.Pipe)
+		case *parse.PipeNode:
+			for _, c := range x.Cmds {
+				walk(c)
+			}
+		case *parse.CommandNode:
+			for _, a := range x.Args {
+				walk(a)
+			}
+		case *parse.FieldNode:
+			seen[x.Ident[0]] = true
+		case *parse.ChainNode:
+			walk(x.Node)
+		case *parse.IfNode:
+			walk(x.Pipe)
+			walk(x.List)
+			walk(x.ElseList)
+		case *parse.RangeNode:
+			walk(x.Pipe)
+			walk(x.List)
+			walk(x.ElseList)
+		case *parse.WithNode:
+			walk(x.Pipe)
+			walk(x.List)
+			walk(x.ElseList)
+		case *parse.TemplateNode:
+			walk(x.Pipe)
+		}
+	}
+	walk(tpl.Tree.Root)
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out, nil
 }

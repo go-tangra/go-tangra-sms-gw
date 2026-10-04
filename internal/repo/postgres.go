@@ -11,6 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/go-tangra/go-tangra/v4/listquery"
+
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/store"
 )
 
@@ -66,6 +68,19 @@ func (p *Postgres) bounds(pg Page) (limit, offset int) {
 	}
 	page := max(pg.Page, 1)
 	return size, (page - 1) * size
+}
+
+// clamp moves a sorted (management) request beyond the last page to the
+// last page; unsorted (Hermes) requests keep the legacy empty page.
+func (p *Postgres) clamp(pg Page, total int) Page {
+	if pg.Sort == "" {
+		return pg
+	}
+	limit, _ := p.bounds(pg)
+	if last := max((total+limit-1)/limit, 1); pg.Page > last {
+		pg.Page = last
+	}
+	return pg
 }
 
 func nullTime(t time.Time) any {
@@ -141,6 +156,28 @@ func (p *Postgres) CreateClient(ctx context.Context, c APIClient) (out APIClient
 	return
 }
 
+// CreateClientSealed inserts an account and stores seal(id) as its callback
+// secret in the same transaction (nil stores none).
+func (p *Postgres) CreateClientSealed(ctx context.Context, c APIClient, seal func(id int64) ([]byte, error)) (out APIClient, err error) {
+	err = p.tenantTx(ctx, c.TenantID, func(t *Tx) error {
+		q := insert("sms_api_client", c.ID, []string{"tenant_id", "username", "password_hash", "email", "authority", "status", "dlr_callback_url",
+			"create_time", "update_time"}, "id")
+		var id int64
+		if err := t.tx.QueryRow(ctx, q, withID(c.ID, c.TenantID, c.Username, c.PasswordHash, c.Email, c.Authority, c.Status, c.CallbackURL,
+			timeOrNow(c.CreateTime), timeOrNow(c.UpdateTime))...).Scan(&id); err != nil {
+			return err
+		}
+		blob, err := seal(id)
+		if err != nil {
+			return err
+		}
+		out, err = scanClient(t.tx.QueryRow(ctx, "UPDATE sms_api_client SET dlr_callback_secret_sealed = $3 WHERE tenant_id = $1 AND id = $2 RETURNING "+clientCols,
+			c.TenantID, id, blob))
+		return err
+	})
+	return
+}
+
 // GetClient reads one account of the tenant.
 func (p *Postgres) GetClient(ctx context.Context, tenant string, id int64) (out APIClient, err error) {
 	err = p.tenantTx(ctx, tenant, func(t *Tx) error {
@@ -150,14 +187,10 @@ func (p *Postgres) GetClient(ctx context.Context, tenant string, id int64) (out 
 	return
 }
 
-// ListClients lists the tenant's accounts by id.
+// ListClients lists the tenant's accounts (by id unless pg sorts).
 func (p *Postgres) ListClients(ctx context.Context, tenant string, pg Page) (out List[APIClient], err error) {
-	limit, offset := p.bounds(pg)
 	err = p.tenantTx(ctx, tenant, func(t *Tx) error {
-		if err := t.tx.QueryRow(ctx, "SELECT count(*) FROM sms_api_client WHERE tenant_id = $1", tenant).Scan(&out.Total); err != nil {
-			return err
-		}
-		out.Items, err = scanAll(scanClient)(t.tx.Query(ctx, "SELECT "+clientCols+" FROM sms_api_client WHERE tenant_id = $1 ORDER BY id LIMIT $2 OFFSET $3", tenant, limit, offset))
+		out, err = listTable(ctx, t, p, "sms_api_client", clientCols, scanClient, ClientList, pg, "username", "email")
 		return err
 	})
 	return
@@ -240,6 +273,27 @@ func (p *Postgres) CreateProvider(ctx context.Context, in Provider) (out Provide
 	return
 }
 
+// CreateProviderSealed inserts a carrier account and stores seal(id) as its
+// configuration in the same transaction (the sealed value is bound to the
+// row id the database assigns).
+func (p *Postgres) CreateProviderSealed(ctx context.Context, in Provider, seal func(id int64) ([]byte, error)) (out Provider, err error) {
+	err = p.tenantTx(ctx, in.TenantID, func(t *Tx) error {
+		q := insert("sms_provider", in.ID, []string{"tenant_id", "name", "type", "object_type", "config_sealed", "config_public", "status", "retention_days", "create_time", "update_time"}, "id")
+		var id int64
+		if err := t.tx.QueryRow(ctx, q, withID(in.ID, in.TenantID, in.Name, in.Type, in.ObjectType, []byte{}, publicConfig(in.ConfigPublic),
+			in.Status, in.RetentionDays, timeOrNow(in.CreateTime), timeOrNow(in.UpdateTime))...).Scan(&id); err != nil {
+			return err
+		}
+		blob, err := seal(id)
+		if err != nil {
+			return err
+		}
+		out, err = scanProvider(t.tx.QueryRow(ctx, "UPDATE sms_provider SET config_sealed = $3 WHERE tenant_id = $1 AND id = $2 RETURNING "+providerCols, in.TenantID, id, blob))
+		return err
+	})
+	return
+}
+
 // GetProvider reads one carrier account of the tenant.
 func (p *Postgres) GetProvider(ctx context.Context, tenant string, id int64) (out Provider, err error) {
 	err = p.tenantTx(ctx, tenant, func(t *Tx) error {
@@ -249,14 +303,10 @@ func (p *Postgres) GetProvider(ctx context.Context, tenant string, id int64) (ou
 	return
 }
 
-// ListProviders lists the tenant's carrier accounts by id.
+// ListProviders lists the tenant's carrier accounts (by id unless pg sorts).
 func (p *Postgres) ListProviders(ctx context.Context, tenant string, pg Page) (out List[Provider], err error) {
-	limit, offset := p.bounds(pg)
 	err = p.tenantTx(ctx, tenant, func(t *Tx) error {
-		if err := t.tx.QueryRow(ctx, "SELECT count(*) FROM sms_provider WHERE tenant_id = $1", tenant).Scan(&out.Total); err != nil {
-			return err
-		}
-		out.Items, err = scanAll(scanProvider)(t.tx.Query(ctx, "SELECT "+providerCols+" FROM sms_provider WHERE tenant_id = $1 ORDER BY id LIMIT $2 OFFSET $3", tenant, limit, offset))
+		out, err = listTable(ctx, t, p, "sms_provider", providerCols, scanProvider, ProviderList, pg, "name")
 		return err
 	})
 	return
@@ -317,14 +367,10 @@ func (p *Postgres) GetTemplate(ctx context.Context, tenant string, id int64) (ou
 	return
 }
 
-// ListTemplates lists the tenant's templates by id.
+// ListTemplates lists the tenant's templates (by id unless pg sorts).
 func (p *Postgres) ListTemplates(ctx context.Context, tenant string, pg Page) (out List[Template], err error) {
-	limit, offset := p.bounds(pg)
 	err = p.tenantTx(ctx, tenant, func(t *Tx) error {
-		if err := t.tx.QueryRow(ctx, "SELECT count(*) FROM sms_template WHERE tenant_id = $1", tenant).Scan(&out.Total); err != nil {
-			return err
-		}
-		out.Items, err = scanAll(scanTemplate)(t.tx.Query(ctx, "SELECT "+templateCols+" FROM sms_template WHERE tenant_id = $1 ORDER BY id LIMIT $2 OFFSET $3", tenant, limit, offset))
+		out, err = listTable(ctx, t, p, "sms_template", templateCols, scanTemplate, TemplateList, pg, "name")
 		return err
 	})
 	return
@@ -376,14 +422,10 @@ func (p *Postgres) GetBlock(ctx context.Context, tenant string, id int64) (out B
 	return
 }
 
-// ListBlocks lists the tenant's blocks by id.
+// ListBlocks lists the tenant's blocks (by id unless pg sorts).
 func (p *Postgres) ListBlocks(ctx context.Context, tenant string, pg Page) (out List[Block], err error) {
-	limit, offset := p.bounds(pg)
 	err = p.tenantTx(ctx, tenant, func(t *Tx) error {
-		if err := t.tx.QueryRow(ctx, "SELECT count(*) FROM sms_block WHERE tenant_id = $1", tenant).Scan(&out.Total); err != nil {
-			return err
-		}
-		out.Items, err = scanAll(scanBlock)(t.tx.Query(ctx, "SELECT "+blockCols+" FROM sms_block WHERE tenant_id = $1 ORDER BY id LIMIT $2 OFFSET $3", tenant, limit, offset))
+		out, err = listTable(ctx, t, p, "sms_block", blockCols, scanBlock, BlockList, pg, "recipient", "description")
 		return err
 	})
 	return
@@ -544,6 +586,22 @@ func (p *Postgres) AppliedImport(ctx context.Context, tenant, fingerprint string
 }
 
 // ---------- helpers ----------
+
+// listTable counts and pages one tenant table: pg.Search over searchCols,
+// pg.Sort on spec (id order when unsorted).
+func listTable[T any](ctx context.Context, t *Tx, p *Postgres, table, cols string, scan func(pgx.Row) (T, error), spec listquery.Spec, pg Page,
+	searchCols ...string) (out List[T], err error) {
+	where, args := search(" WHERE tenant_id = $1", []any{t.tenant}, pg.Search, searchCols...)
+	if err := t.tx.QueryRow(ctx, "SELECT count(*) FROM "+table+where, args...).Scan(&out.Total); err != nil {
+		return out, err
+	}
+	limit, offset := p.bounds(p.clamp(pg, out.Total))
+	out.Page = offset/limit + 1
+	n := len(args)
+	out.Items, err = scanAll(scan)(t.tx.Query(ctx, "SELECT "+cols+" FROM "+table+where+" ORDER BY "+orderBy(spec, pg, "id")+
+		fmt.Sprintf(" LIMIT $%d OFFSET $%d", n+1, n+2), append(args, limit, offset)...))
+	return out, err
+}
 
 func scanAll[T any](scan func(pgx.Row) (T, error)) func(pgx.Rows, error) ([]T, error) {
 	return func(rows pgx.Rows, err error) ([]T, error) {

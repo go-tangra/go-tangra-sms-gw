@@ -70,16 +70,23 @@ func (v View) Client() int64 { return v.client }
 func (v View) valid() bool { return store.ValidTenant(v.tenant) }
 
 // Page selects one page of a list; out-of-range values fall back to the
-// configured default and maximum size.
+// configured default and maximum size. Sort names a field of the list's
+// listquery.Spec (ProviderList, ...; "" keeps the list's legacy order) and
+// Search narrows the list on its text columns (see the Spec comments).
 type Page struct {
-	Page int
-	Size int
+	Page   int
+	Size   int
+	Sort   string
+	Desc   bool
+	Search string
 }
 
-// List is one page of records and the total matching the filter.
+// List is one page of records and the total matching the filter; Page is
+// the page served (paged lists only).
 type List[T any] struct {
 	Items []T
 	Total int
+	Page  int
 }
 
 // APIClient is a Hermes account.
