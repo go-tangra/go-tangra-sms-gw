@@ -143,15 +143,18 @@ var numericTables = []string{"sms_api_client", "sms_provider", "sms_template", "
 // SyncSequences advances every identity sequence past the largest stored id
 // (after an import inserted explicit ids). It needs the migration role.
 func (s *Store) SyncSequences(ctx context.Context) error {
-	return s.Tx(ctx, System(), func(tx pgx.Tx) error {
-		for _, t := range numericTables {
-			q := fmt.Sprintf("SELECT setval(pg_get_serial_sequence('%[1]s', 'id'), COALESCE((SELECT max(id) FROM %[1]s), 1), (SELECT count(*) > 0 FROM %[1]s))", t)
-			if _, err := tx.Exec(ctx, q); err != nil {
-				return fmt.Errorf("store: sequence %s: %w", t, err)
-			}
+	return s.Tx(ctx, System(), func(tx pgx.Tx) error { return SyncSequencesTx(ctx, tx) })
+}
+
+// SyncSequencesTx is SyncSequences inside an existing transaction.
+func SyncSequencesTx(ctx context.Context, tx pgx.Tx) error {
+	for _, t := range numericTables {
+		q := fmt.Sprintf("SELECT setval(pg_get_serial_sequence('%[1]s', 'id'), COALESCE((SELECT max(id) FROM %[1]s), 1), (SELECT count(*) > 0 FROM %[1]s))", t)
+		if _, err := tx.Exec(ctx, q); err != nil {
+			return fmt.Errorf("store: sequence %s: %w", t, err)
 		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // Classify maps PostgreSQL errors onto the store sentinels; other errors

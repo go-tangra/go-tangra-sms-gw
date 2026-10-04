@@ -134,25 +134,9 @@ type providerInput struct {
 	Config        map[string]string `json:"config"`
 }
 
-// redactConfig is what clients may see: credential fields become the
-// marker (absent when empty) and credential values inside other fields
-// (a dlr_token in a callback URL) are replaced by the marker.
+// redactConfig is what clients may see (provider.Redacted).
 func redactConfig(typ string, cfg sealed.Config) map[string]string {
-	keys := provider.SecretKeys(typ)
-	out := map[string]string(sealed.Redact(cfg, keys))
-	values := provider.SecretValues(typ, cfg)
-	for k, v := range out {
-		if slices.Contains(keys, k) {
-			continue
-		}
-		for _, sv := range values {
-			if len(sv) >= 8 {
-				v = strings.ReplaceAll(v, sv, sealed.Marker)
-			}
-		}
-		out[k] = v
-	}
-	return out
+	return provider.Redacted(typ, cfg)
 }
 
 func publicConfig(redacted map[string]string) map[string]any {

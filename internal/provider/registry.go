@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
+
+	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/sealed"
 )
 
 // Field describes one configuration key for the management form.
@@ -123,6 +126,28 @@ func SecretValues(typ string, cfg map[string]string) []string {
 			seen[k] = true
 			out = append(out, v)
 		}
+	}
+	return out
+}
+
+// Redacted is what operators may see of a configuration: credential fields
+// become sealed.Marker (absent when empty) and credential values inside other
+// fields (a dlr_token in a callback URL) are replaced by the marker. It is
+// also the stored public part of a configuration.
+func Redacted(typ string, cfg map[string]string) map[string]string {
+	keys := SecretKeys(typ)
+	out := map[string]string(sealed.Redact(cfg, keys))
+	values := SecretValues(typ, cfg)
+	for k, v := range out {
+		if slices.Contains(keys, k) {
+			continue
+		}
+		for _, sv := range values {
+			if len(sv) >= 8 {
+				v = strings.ReplaceAll(v, sv, sealed.Marker)
+			}
+		}
+		out[k] = v
 	}
 	return out
 }

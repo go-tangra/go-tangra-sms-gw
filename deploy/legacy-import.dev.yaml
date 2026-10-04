@@ -1,0 +1,15 @@
+# Legacy (v3) import for a workstation rehearsal (cmd/smsgw-migrate). The
+# source is a read-only SNAPSHOT of the legacy database restored into its own
+# PostgreSQL (deploy/compose.yaml service legacy-db), never the running legacy
+# database. Its DSN is a secret reference: export it in the environment, e.g.
+#   export SMSGW_LEGACY_DSN='postgres://postgres:dev@127.0.0.1:5438/sms_gw_legacy?sslmode=disable'
+source:
+  dsn: { env: SMSGW_LEGACY_DSN }
+# Explicit tenant mapping: -tenant takes one of these names or a tenant UUID.
+tenants:
+  fixture-tenant: "00000000-0000-0000-0000-000000000001"
+# Legacy admin sends (owner 0) are recorded under this platform actor.
+platform_actor: legacy-admin
+# false: records with missing references fail the run; true: they are left
+# out and listed in the report.
+exclude_orphans: false
