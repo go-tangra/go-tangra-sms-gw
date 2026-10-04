@@ -33,8 +33,9 @@ func (a *App) buildPublic() error {
 		Log: a.Log.With("component", "sms"), CarrierTimeout: carrierTimeout,
 		Policy: sms.RecipientPolicy{MinDigits: c.Recipients.MinDigits, Allowed: c.Recipients.AllowedPrefixes, Blocked: c.Recipients.BlockedPrefixes}})
 	a.Public = publicapi.New(publicapi.Config{Auth: a.Auth, SMS: a.SMS, Proxy: proxy, MaxBody: c.Public.MaxBodyBytes, Log: a.Log.With("component", "public"),
-		Login: ratelimit.New(c.RateLimits.LoginPerMinute, c.RateLimits.LoginBurst, 50000),
-		Send:  ratelimit.New(c.RateLimits.SendPerMinute, c.RateLimits.SendBurst, 10000)})
+		Receipts: a.buildReceipts(proxy),
+		Login:    ratelimit.New(c.RateLimits.LoginPerMinute, c.RateLimits.LoginBurst, 50000),
+		Send:     ratelimit.New(c.RateLimits.SendPerMinute, c.RateLimits.SendBurst, 10000)})
 	if c.Public.TLSEnabled() || c.ACME.Enabled {
 		a.Log.Warn("public HTTPS is configured but not served yet; only the plain public listener is active")
 	}

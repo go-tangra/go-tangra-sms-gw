@@ -2,9 +2,9 @@
 // PostgreSQL, KEK envelope, audit and metrics → operator verification over
 // the pooled auth connection → management routes on the mesh HTTP server,
 // the application admin listener (health, readiness, metrics) and the public
-// Hermes listener (public.go). Further listeners and background workers
-// attach through AddServer and Go; Run starts and drains everything with one
-// lifecycle context.
+// Hermes listener (public.go) with carrier receipts and callbacks (dlr.go).
+// Further listeners and background workers attach through AddServer and Go;
+// Run starts and drains everything with one lifecycle context.
 package app
 
 import (
@@ -30,6 +30,7 @@ import (
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/auth"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/authz"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/config"
+	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/dlr"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/metrics"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/provider"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/publicapi"
@@ -37,6 +38,7 @@ import (
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/sealed"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/sms"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/store"
+	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/webhook"
 )
 
 // Options override infrastructure (tests) and attach optional parts.
@@ -71,6 +73,9 @@ type App struct {
 	SMS     *sms.Service
 	Senders *provider.Cache
 	Public  *publicapi.Server
+	// Carrier receipts and client callbacks (dlr.go).
+	Receipts  *dlr.Processor
+	Callbacks *webhook.Dispatcher
 
 	publicAddr net.Addr
 
