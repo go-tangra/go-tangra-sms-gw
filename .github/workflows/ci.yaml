@@ -1,7 +1,7 @@
-# go-tangra-sms-gw CI (go-tangra v4), on the v4 branch; main keeps the v3 code and workflow.
+# go-tangra-sms-gw CI (go-tangra v4), on the main branch.
 #
 # Images: ghcr.io/go-tangra/go-tangra-sms-gw tagged <version>, <major>.<minor>, <major> (from tags vX.Y.Z)
-# and sha-<short> (v4 branch pushes and tags). There is deliberately NO `latest`,
+# and sha-<short> (main branch pushes and tags). There is deliberately NO `latest`,
 # NO branch tag and NO registry cleanup job: the v3.x images published by the old
 # workflow must stay available.
 #
@@ -17,12 +17,12 @@ name: CI
 on:
   push:
     branches:
-      - v4
+      - main
     tags:
       - 'v*'
   pull_request:
     branches:
-      - v4
+      - main
   workflow_dispatch:
 
 permissions:
@@ -184,7 +184,7 @@ jobs:
             type=semver,pattern={{major}}
             type=sha
 
-      - name: Build (push on tags and v4 pushes only)
+      - name: Build (push on tags and main pushes only)
         uses: docker/build-push-action@v6
         with:
           context: .
