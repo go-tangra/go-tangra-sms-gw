@@ -1,6 +1,8 @@
 // Command smsgwsvc runs the sms-gw module: the V4 management API on the
 // mesh and the legacy Hermes edge on its own listener. `smsgwsvc bootstrap
 // -config <file>` prepares the database and checks the deployment secrets;
+// `smsgwsvc preflight -config <file> [-json]` reports every problem with the
+// configuration and the environment without changing anything;
 // `smsgwsvc version` prints the build version.
 package main
 
@@ -19,8 +21,13 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "bootstrap" {
-		os.Exit(bootstrap(os.Args[2:]))
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "bootstrap":
+			os.Exit(bootstrap(os.Args[2:]))
+		case "preflight":
+			os.Exit(preflightCmd(os.Args[2:], os.Stdout, os.Stderr))
+		}
 	}
 	os.Exit(run(os.Args[1:]))
 }

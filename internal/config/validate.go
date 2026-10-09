@@ -17,64 +17,71 @@ var (
 	hostRE   = regexp.MustCompile(`^(\*\.)?([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
 )
 
-// Validate checks the Freya config and every module section.
+// Validate checks the Freya config and every module section. It returns the
+// first problem found.
 func (c Config) Validate() error {
-	if err := c.Config.Validate(); err != nil {
-		return err
+	if errs := c.ValidateAll(); len(errs) > 0 {
+		return errs[0]
+	}
+	return nil
+}
+
+// ValidateAll runs the same checks as Validate but keeps going and returns
+// every problem, in the order Validate meets them (its first element is
+// Validate's error). Used by preflight.
+func (c Config) ValidateAll() []error {
+	errs := c.Config.ValidateAll()
+	add := func(err error) {
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
 	prod := c.IsProduction()
 	if c.Server.HTTPAddr == "" {
-		return errors.New("config: server.http_addr is required (management API on the mesh)")
+		add(errors.New("config: server.http_addr is required (management API on the mesh)"))
 	}
-	if err := c.validateDB(prod); err != nil {
-		return err
-	}
+	errs = append(errs, c.validateDB(prod)...)
 	switch c.KEK.Source {
 	case "file":
 		if c.KEK.Path == "" {
-			return errors.New("config: kek.path is required for kek.source file")
+			add(errors.New("config: kek.path is required for kek.source file"))
 		}
 	case "env":
 		if c.KEK.Env == "" {
-			return errors.New("config: kek.env is required for kek.source env")
+			add(errors.New("config: kek.env is required for kek.source env"))
 		}
 	default:
-		return errors.New("config: kek.source must be file or env")
+		add(errors.New("config: kek.source must be file or env"))
 	}
 	if c.Gateway.Service == "" || c.Gateway.AuthService == "" {
-		return errors.New("config: gateway.service and gateway.auth_service are required")
+		add(errors.New("config: gateway.service and gateway.auth_service are required"))
 	}
 	if iu, err := url.Parse(c.Gateway.Issuer); err != nil || iu.Scheme != "https" || iu.Host == "" {
-		return errors.New("config: gateway.issuer must be an https origin")
+		add(errors.New("config: gateway.issuer must be an https origin"))
 	}
-	if err := c.validateIdentity(); err != nil {
-		return err
-	}
-	if err := c.validateListeners(); err != nil {
-		return err
-	}
-	if err := c.validatePublic(prod); err != nil {
-		return err
-	}
-	if err := c.validateACME(prod); err != nil {
-		return err
-	}
-	return c.validateLimits(prod)
+	add(c.validateIdentity())
+	add(c.validateListeners())
+	errs = append(errs, c.validatePublic(prod)...)
+	add(c.validateACME(prod))
+	return append(errs, c.validateLimits(prod)...)
 }
 
-func (c Config) validateDB(prod bool) error {
+func (c Config) validateDB(prod bool) []error {
+	var errs []error
 	if c.DB.DSN == "" {
-		return errors.New("config: db.dsn is required")
+		errs = append(errs, errors.New("config: db.dsn is required"))
 	}
-	for _, dsn := range []string{c.DB.DSN, c.DB.MigrateDSN} {
-		if prod && dsn != "" && !strings.Contains(dsn, "sslmode=verify-full") && !strings.Contains(dsn, "sslmode=verify-ca") {
-			return errors.New("config: db dsn must use sslmode=verify-full (or verify-ca) in production")
+	if prod {
+		for _, d := range []struct{ name, dsn string }{{"db.dsn", c.DB.DSN}, {"db.migrate_dsn", c.DB.MigrateDSN}} {
+			if d.dsn != "" && !strings.Contains(d.dsn, "sslmode=verify-full") && !strings.Contains(d.dsn, "sslmode=verify-ca") {
+				errs = append(errs, fmt.Errorf("config: db dsn must use sslmode=verify-full (or verify-ca) in production (%s)", d.name))
+			}
 		}
 	}
 	if c.DB.MaxConns < 1 || c.DB.MaxConns > 256 {
-		return errors.New("config: db.max_conns must be within [1, 256]")
+		errs = append(errs, errors.New("config: db.max_conns must be within [1, 256]"))
 	}
-	return nil
+	return errs
 }
 
 // validateIdentity refuses conflicting identities: network enrollment and a
@@ -145,38 +152,39 @@ func overlaps(a, b string) bool {
 	return ha == hb || unspec(ha) || unspec(hb)
 }
 
-func (c Config) validatePublic(prod bool) error {
+func (c Config) validatePublic(prod bool) []error {
+	var errs []error
 	p := c.Public
 	if (p.TLSCertFile == "") != (p.TLSKeyFile == "") {
-		return errors.New("config: public.tls_cert_file and public.tls_key_file go together")
+		errs = append(errs, errors.New("config: public.tls_cert_file and public.tls_key_file go together"))
 	}
 	if p.TLSEnabled() && c.ACME.Enabled {
-		return errors.New("config: public static TLS and acme.enabled are mutually exclusive")
+		errs = append(errs, errors.New("config: public static TLS and acme.enabled are mutually exclusive"))
 	}
 	if p.MaxBodyBytes < 1<<10 || p.MaxBodyBytes > 1<<20 {
-		return errors.New("config: public.max_body_bytes must be within [1 KiB, 1 MiB]")
+		errs = append(errs, errors.New("config: public.max_body_bytes must be within [1 KiB, 1 MiB]"))
 	}
 	for _, cidr := range p.TrustedProxies {
 		if _, err := netip.ParsePrefix(cidr); err != nil {
 			if _, err := netip.ParseAddr(cidr); err != nil {
-				return fmt.Errorf("config: public.trusted_proxies entry %q is not an address or CIDR", cidr)
+				errs = append(errs, fmt.Errorf("config: public.trusted_proxies entry %q is not an address or CIDR", cidr))
 			}
 		}
 	}
 	a := c.PublicAuth
 	if !a.JWTSecret.Set() || (a.JWTSecret.File != "" && a.JWTSecret.Env != "") {
-		return errors.New("config: public_auth.jwt_secret needs exactly one of file or env")
+		errs = append(errs, errors.New("config: public_auth.jwt_secret needs exactly one of file or env"))
 	}
 	if a.AccessTTLSeconds < 60 || a.AccessTTLSeconds > 86400 {
-		return errors.New("config: public_auth.access_ttl_seconds must be within [60, 86400]")
+		errs = append(errs, errors.New("config: public_auth.access_ttl_seconds must be within [60, 86400]"))
 	}
 	if a.RefreshTTLSeconds < a.AccessTTLSeconds || a.RefreshTTLSeconds > 90*86400 {
-		return errors.New("config: public_auth.refresh_ttl_seconds must be within [access_ttl_seconds, 7776000]")
+		errs = append(errs, errors.New("config: public_auth.refresh_ttl_seconds must be within [access_ttl_seconds, 7776000]"))
 	}
 	if prod && (c.Webhook.AllowHTTP || c.Webhook.AllowPrivate) {
-		return errors.New("config: webhook.allow_http and webhook.allow_private are not permitted in production")
+		errs = append(errs, errors.New("config: webhook.allow_http and webhook.allow_private are not permitted in production"))
 	}
-	return nil
+	return errs
 }
 
 func (c Config) validateACME(prod bool) error {
@@ -220,38 +228,38 @@ func (c Config) validateACME(prod bool) error {
 	return nil
 }
 
-func (c Config) validateLimits(prod bool) error {
+func (c Config) validateLimits(prod bool) []error {
+	var errs []error
 	r := c.RateLimits
 	if r.LoginPerMinute <= 0 || r.SendPerMinute <= 0 || r.DLRPerMinute <= 0 || r.LoginBurst < 1 || r.SendBurst < 1 || r.DLRBurst < 1 {
-		return errors.New("config: rate_limits values must be positive")
+		errs = append(errs, errors.New("config: rate_limits values must be positive"))
 	}
 	rc := c.Recipients
 	if rc.MinDigits < 1 || rc.MinDigits > 15 {
-		return errors.New("config: recipients.min_digits must be within [1, 15]")
+		errs = append(errs, errors.New("config: recipients.min_digits must be within [1, 15]"))
 	}
 	for _, p := range append(append([]string(nil), rc.AllowedPrefixes...), rc.BlockedPrefixes...) {
 		if !digitsRE.MatchString(p) {
-			return fmt.Errorf("config: recipients prefix %q must be 1 to 15 digits without +", p)
+			errs = append(errs, fmt.Errorf("config: recipients prefix %q must be 1 to 15 digits without +", p))
 		}
 	}
 	if c.Webhook.QueueSize < 1 || c.Webhook.QueueSize > 1<<16 || c.Webhook.Workers < 1 || c.Webhook.Workers > 64 {
-		return errors.New("config: webhook.queue_size must be within [1, 65536] and webhook.workers within [1, 64]")
+		errs = append(errs, errors.New("config: webhook.queue_size must be within [1, 65536] and webhook.workers within [1, 64]"))
 	}
 	if c.Retention.Interval < time.Minute || c.Retention.Interval > 24*time.Hour {
-		return errors.New("config: retention.interval must be within [1m, 24h]")
+		errs = append(errs, errors.New("config: retention.interval must be within [1m, 24h]"))
 	}
 	if m := c.Monitoring.PrometheusURL; m != "" {
 		u, err := url.Parse(m)
 		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil {
-			return errors.New("config: monitoring.prometheus_url must be an http(s) URL without credentials")
-		}
-		if prod && u.Scheme != "https" {
-			return errors.New("config: monitoring.prometheus_url must use https in production")
+			errs = append(errs, errors.New("config: monitoring.prometheus_url must be an http(s) URL without credentials"))
+		} else if prod && u.Scheme != "https" {
+			errs = append(errs, errors.New("config: monitoring.prometheus_url must use https in production"))
 		}
 	}
 	q := c.Query
 	if q.MaxPageSize < 1 || q.MaxPageSize > 10000 || q.DefaultPageSize < 1 || q.DefaultPageSize > q.MaxPageSize {
-		return errors.New("config: query.default_page_size and query.max_page_size must satisfy 1 <= default <= max <= 10000")
+		errs = append(errs, errors.New("config: query.default_page_size and query.max_page_size must satisfy 1 <= default <= max <= 10000"))
 	}
-	return nil
+	return errs
 }

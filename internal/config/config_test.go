@@ -112,6 +112,33 @@ func TestValidateRefusals(t *testing.T) {
 	}
 }
 
+// TestValidateAllCollects is the incident config: every production refusal
+// is reported at once, in Validate's order.
+func TestValidateAllCollects(t *testing.T) {
+	if errs := devConfig(t).ValidateAll(); len(errs) != 0 {
+		t.Fatalf("dev config: %v", errs)
+	}
+	c := devConfig(t)
+	c.Env = "production"
+	c.DB.DSN = "postgres://smsgw_app@db/sms_gw?sslmode=disable"
+	c.DB.MigrateDSN = "postgres://postgres@db/sms_gw?sslmode=require"
+	c.Admin.Addr = "0.0.0.0:9593"
+	c.Recipients.MinDigits = 0
+	errs := c.ValidateAll()
+	want := []string{"allow_non_loopback", "(db.dsn)", "(db.migrate_dsn)", "webhook.allow_http", "min_digits"}
+	if len(errs) != len(want) {
+		t.Fatalf("got %d problems, want %d: %v", len(errs), len(want), errs)
+	}
+	for i, w := range want {
+		if !strings.Contains(errs[i].Error(), w) {
+			t.Errorf("problem %d %q does not mention %q", i, errs[i], w)
+		}
+	}
+	if err := c.Validate(); err == nil || err.Error() != errs[0].Error() {
+		t.Fatalf("Validate must return the first problem, got %v", err)
+	}
+}
+
 func TestValidateAccepts(t *testing.T) {
 	for name, mutate := range map[string]func(*Config){
 		"acme":       enableACME,
