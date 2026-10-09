@@ -388,7 +388,7 @@ func dbChecks(cfg config.Config) []preflight.Check {
 // files included) and runs SELECT 1. Connection, TLS and authentication
 // failures are reported distinctly; the password is never reported.
 func dbCheck(name, dsn string) preflight.Check {
-	return preflight.Check{Name: name, Run: func(ctx context.Context) preflight.Result {
+	return preflight.Check{Name: name, Network: true, Run: func(ctx context.Context) preflight.Result {
 		pc, err := pgx.ParseConfig(dsn)
 		if err != nil {
 			// The driver quotes the whole DSN; keep only the reason.

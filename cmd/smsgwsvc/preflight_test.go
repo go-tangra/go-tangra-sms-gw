@@ -505,3 +505,11 @@ func TestDBFailureClassifies(t *testing.T) {
 		})
 	}
 }
+
+// Every check that contacts another host is marked Network, so -offline skips
+// it (CI validates bundles where neither the core nor the database exists).
+func TestPreflightNetworkChecksAreMarked(t *testing.T) {
+	if !dbCheck("database: db.dsn", "postgres://u@127.0.0.1:1/db?sslmode=verify-full").Network {
+		t.Fatal("the database check must be a network check")
+	}
+}
