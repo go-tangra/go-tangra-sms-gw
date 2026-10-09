@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -246,5 +247,50 @@ func TestCache(t *testing.T) {
 	}
 	if failing.calls.Load() != 2 {
 		t.Fatal("error cached")
+	}
+}
+
+// Refusals are logged with the verifier's reason, once a minute per reason,
+// and the token never reaches the log.
+func TestRefusalsAreLogged(t *testing.T) {
+	k := newKeys(t)
+	other := newKeys(t)
+	var buf strings.Builder
+	now := time.Now()
+	a := New(verifier(t, k, nil), perms{}).WithLogger(slog.New(slog.NewJSONHandler(&buf, nil)))
+	a.now = func() time.Time { return now }
+
+	bad := other.token(t, tenantA) // signed by an unknown key
+	for i := 0; i < 3; i++ {
+		if w, _ := serve(a, bearer(bad), ProvidersRead); w.Code != http.StatusUnauthorized {
+			t.Fatalf("bad signature → %d", w.Code)
+		}
+	}
+	if w, _ := serve(a, http.Header{}, ProvidersRead); w.Code != http.StatusUnauthorized {
+		t.Fatalf("no token → %d", w.Code)
+	}
+	if w, _ := serve(a, http.Header{"X-Tenant-Id": {tenantA}}, ProvidersRead); w.Code != http.StatusForbidden {
+		t.Fatalf("legacy header → %d", w.Code)
+	}
+	out := buf.String()
+	if strings.Contains(out, bad) || strings.Contains(out, strings.Split(bad, ".")[2]) {
+		t.Fatal("the token must never be logged")
+	}
+	if n := strings.Count(out, `"reason":"token_rejected"`); n != 1 {
+		t.Fatalf("token_rejected logged %d times (throttled to 1):\n%s", n, out)
+	}
+	if !strings.Contains(out, "signature is invalid") {
+		t.Fatalf("the verifier's reason is missing:\n%s", out)
+	}
+	for _, r := range []string{"no_bearer_token", "legacy_identity_header"} {
+		if !strings.Contains(out, `"reason":"`+r+`"`) {
+			t.Fatalf("%s not logged:\n%s", r, out)
+		}
+	}
+
+	now = now.Add(refusalLogEvery)
+	serve(a, bearer(bad), ProvidersRead)
+	if n := strings.Count(buf.String(), `"reason":"token_rejected"`); n != 2 {
+		t.Fatalf("after the throttle window token_rejected logged %d times, want 2", n)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -84,10 +85,49 @@ func FromContext(ctx context.Context) (Operator, bool) {
 type Authz struct {
 	verifier Verifier
 	checker  Checker
+	log      *slog.Logger
+	now      func() time.Time
+
+	mu     sync.Mutex
+	logged map[string]time.Time // refusal reason → last logged
 }
 
+// refusalLogEvery bounds how often one refusal reason is logged.
+const refusalLogEvery = time.Minute
+
 // New combines a token verifier and a permission checker.
-func New(v Verifier, c Checker) *Authz { return &Authz{verifier: v, checker: c} }
+func New(v Verifier, c Checker) *Authz { return &Authz{verifier: v, checker: c, now: time.Now} }
+
+// WithLogger logs why requests are refused (the verifier's reason, at most
+// once a minute per reason; never the token). It returns a for chaining.
+func (a *Authz) WithLogger(l *slog.Logger) *Authz {
+	a.log = l
+	return a
+}
+
+// refused logs a refusal reason, throttled per reason.
+func (a *Authz) refused(reason string, err error) {
+	if a.log == nil {
+		return
+	}
+	detail := ""
+	if err != nil {
+		detail = err.Error()
+	}
+	key := reason + "\x00" + detail
+	a.mu.Lock()
+	now := a.now()
+	if last, ok := a.logged[key]; ok && now.Sub(last) < refusalLogEvery {
+		a.mu.Unlock()
+		return
+	}
+	if a.logged == nil || len(a.logged) > 1024 {
+		a.logged = map[string]time.Time{}
+	}
+	a.logged[key] = now
+	a.mu.Unlock()
+	a.log.Warn("operator request refused", "reason", reason, "detail", detail)
+}
 
 var tenantRE = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
@@ -105,21 +145,34 @@ func legacyHeader(h http.Header) bool {
 
 // Authenticate verifies the request's bearer token.
 func (a *Authz) Authenticate(r *http.Request) (Operator, error) {
+	if a == nil {
+		return Operator{}, ErrUnavailable
+	}
 	if legacyHeader(r.Header) {
+		a.refused("legacy_identity_header", nil)
 		return Operator{}, ErrForbidden
 	}
-	if a == nil || a.verifier == nil {
+	if a.verifier == nil {
 		return Operator{}, ErrUnavailable
 	}
 	token := authclient.BearerToken(r.Header.Get("Authorization"))
 	if token == "" {
+		a.refused("no_bearer_token", nil)
 		return Operator{}, ErrUnauthenticated
 	}
 	id, err := a.verifier.Verify(r.Context(), token)
-	if errors.Is(err, authclient.ErrStale) {
+	switch {
+	case errors.Is(err, authclient.ErrStale):
+		a.refused("revocation_feed_stale", err)
 		return Operator{}, ErrUnavailable
-	}
-	if err != nil || id.UserID == "" || !tenantRE.MatchString(id.TenantID) {
+	case err != nil:
+		a.refused("token_rejected", err)
+		return Operator{}, ErrUnauthenticated
+	case id.UserID == "":
+		a.refused("token_without_user", nil)
+		return Operator{}, ErrUnauthenticated
+	case !tenantRE.MatchString(id.TenantID):
+		a.refused("token_tenant_malformed", nil)
 		return Operator{}, ErrUnauthenticated
 	}
 	return Operator{TenantID: id.TenantID, UserID: id.UserID, SessionID: id.SessionID, Roles: append([]string(nil), id.Roles...)}, nil
