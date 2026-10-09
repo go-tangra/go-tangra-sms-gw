@@ -203,7 +203,7 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 		}
 	}
 	a.Verifier = verifier
-	a.Authz = authz.New(verifier, checker)
+	a.Authz = authz.New(verifier, checker).WithLogger(a.Log)
 	a.Management.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"reason": "not_found"})
 	})
