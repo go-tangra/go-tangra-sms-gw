@@ -76,8 +76,8 @@ github.com/go-tangra/go-tangra-lcm/sdk/v4 v4.1.0 h1:KjAVJn8jAZbcIyL6B3yasngtFTxw
 github.com/go-tangra/go-tangra-lcm/sdk/v4 v4.1.0/go.mod h1:j/24DHoyBPfYcHzehJKkQLL/s1jDPToGr/LqV/qA/HM=
 github.com/go-tangra/go-tangra-portal/sdk/v4 v4.1.0 h1:vER2dKZi79h1Q4AvLyLmrcJ47vAa6jY5AlvUl+kXIiw=
 github.com/go-tangra/go-tangra-portal/sdk/v4 v4.1.0/go.mod h1:SKP6ZWoKPtYo7IZboDjGZW3rbGnKtSBr7I24EoLT2Bk=
-github.com/go-tangra/go-tangra/v4 v4.5.0 h1:/1H2oeC8FZ8Klg3+2rFhRJfADw8UWpWEfprqki1iaxw=
-github.com/go-tangra/go-tangra/v4 v4.5.0/go.mod h1:NzD0r1e1eIeLofboJfKAGrKtBKfIa7LlUxaLXOtyvVo=
+github.com/go-tangra/go-tangra/v4 v4.5.1-0.20261009103507-def2adefc002 h1:z16oEXw/wc/Wgh5+gCgh4C+WA5ESf7sQ2q5yQlNa250=
+github.com/go-tangra/go-tangra/v4 v4.5.1-0.20261009103507-def2adefc002/go.mod h1:NzD0r1e1eIeLofboJfKAGrKtBKfIa7LlUxaLXOtyvVo=
 github.com/golang-jwt/jwt/v5 v5.3.1 h1:kYf81DTWFe7t+1VvL7eS+jKFVWaUnK9cB1qbwn63YCY=
 github.com/golang-jwt/jwt/v5 v5.3.1/go.mod h1:fxCRLWMO43lRc8nhHWY6LGqRcf+1gQWArsqaEUEa5bE=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=

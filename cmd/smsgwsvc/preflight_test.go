@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -40,7 +41,7 @@ const tenant = "00000000-0000-0000-0000-000000000001"
 // the config points at.
 type env struct {
 	Dir, Env, TrustDomain, TokenFile, StateFile, DSN string
-	Gateway, Auth, LCM, EnrollURL                    string
+	Gateway, Auth, LCM, EnrollURL, Issuer            string
 	Webhook, Insecure                                bool
 	Extra                                            string
 }
@@ -63,7 +64,8 @@ func newEnv(t *testing.T) *env {
 	}
 	e := &env{Dir: dir, Env: "dev", TrustDomain: "infra.example.org", StateFile: filepath.Join(dir, "state", "svid.json"),
 		Gateway: closedAddr(t), Auth: closedAddr(t), LCM: closedAddr(t), EnrollURL: "https://" + closedAddr(t) + "/api/lcm/v1/enroll",
-		DSN: "postgres://smsgw_app:pw-s3cret@" + closedAddr(t) + "/sms_gw?sslmode=disable", Insecure: true}
+		Issuer: "https://" + closedAddr(t),
+		DSN:    "postgres://smsgw_app:pw-s3cret@" + closedAddr(t) + "/sms_gw?sslmode=disable", Insecure: true}
 	e.TokenFile = write("token", token(t, clock.Add(20*time.Minute), "spiffe://infra.example.org/svc/sms-gw"), 0o600)
 	return e
 }
@@ -89,7 +91,7 @@ discovery:
     auth: ["{{.Auth}}"]
 db: { dsn: "{{.DSN}}" }
 kek: { source: file, path: {{.Dir}}/kek }
-gateway: { service: gateway, issuer: https://portal.example.org, auth_service: auth }
+gateway: { service: gateway, issuer: {{.Issuer}}, auth_service: auth }
 public: { http_addr: 127.0.0.1:0 }
 public_auth: { jwt_secret: { file: {{.Dir}}/jwt.key } }
 recipients: { allowed_prefixes: ["359"] }
@@ -177,7 +179,28 @@ func runPreflight(t *testing.T, path string, args ...string) (string, int) {
 
 func results(t *testing.T, path string) []preflight.Result {
 	t.Helper()
-	return preflight.Run(context.Background(), testPlanner.plan(context.Background(), path))
+	return resultsWith(testPlanner, path)
+}
+
+func resultsWith(p planner, path string) []preflight.Result {
+	return preflight.Run(context.Background(), p.plan(context.Background(), path))
+}
+
+// portal serves the enrol endpoint (405 to GET) and the platform JWKS, like
+// the core's gateway; trust is a TLS config that trusts it.
+func portal(t *testing.T) (srv *httptest.Server, trust *tls.Config) {
+	t.Helper()
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == preflight.JWKSPath {
+			_, _ = io.WriteString(w, `{"keys":[{"kty":"OKP","crv":"Ed25519","kid":"k1","x":"J-dVacDYm0zmy2-X1K6XQWwsCnsjz5FQQ7K8U3wqHPE","use":"sig"}]}`)
+			return
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}))
+	t.Cleanup(srv.Close)
+	roots := x509.NewCertPool()
+	roots.AddCert(srv.Certificate())
+	return srv, &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
 }
 
 // find returns the results named name.
@@ -261,10 +284,11 @@ func TestPreflightReportsTheIncident(t *testing.T) {
 func TestPreflightHealthyEnvironment(t *testing.T) {
 	e := newEnv(t)
 	e.Gateway, e.Auth, e.LCM = listen(t), listen(t), listen(t)
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusMethodNotAllowed) }))
-	defer srv.Close()
-	e.EnrollURL = srv.URL + "/api/lcm/v1/enroll"
-	res := results(t, e.config(t))
+	srv, trust := portal(t)
+	e.EnrollURL, e.Issuer = srv.URL+"/api/lcm/v1/enroll", srv.URL
+	p := testPlanner
+	p.issuerTLS = trust
+	res := resultsWith(p, e.config(t))
 	for _, r := range res {
 		if r.Status == preflight.Fail && r.Name != "database: db.dsn" {
 			t.Errorf("unexpected failure %s: %s", r.Name, r.Detail)
@@ -285,8 +309,45 @@ func TestPreflightHealthyEnvironment(t *testing.T) {
 	expect(t, res, "reach: gateway", preflight.Pass, "reachable")
 	expect(t, res, "reach: lcm (enroll.lcm_grpc)", preflight.Pass, "reachable")
 	expect(t, res, "reach: enroll (enroll.enroll_url)", preflight.Warn, "NOT verified")
+	expect(t, res, "issuer: gateway.issuer origin", preflight.Pass, "is the enrolment URL's origin")
+	expect(t, res, "issuer: gateway.issuer signing keys", preflight.Pass, "publishes 1 platform signing key")
 	if strings.Contains(dump(res), strings.TrimSpace(token(t, clock.Add(20*time.Minute), "spiffe://infra.example.org/svc/sms-gw"))) {
 		t.Fatal("the token must never be reported")
+	}
+}
+
+// The remote install that enrolled and registered, then refused every
+// console request: gateway.issuer was not the portal origin auth signs with.
+func TestPreflightWrongIssuer(t *testing.T) {
+	srv, trust := portal(t)
+	p := testPlanner
+	p.issuerTLS = trust
+	for _, tc := range []struct {
+		name, issuer string
+		originStatus preflight.Status
+		origin, keys string
+	}{
+		{"nothing listens there (localhost:8443)", "https://" + closedAddr(t), preflight.Warn, "differs from the enrolment URL's origin", "connection refused"},
+		{"right host, no keys at that path", srv.URL + "/auth", preflight.Pass, "is the enrolment URL's origin", "answered HTTP 405"},
+		{"placeholder never rendered", "'@@GATEWAY_ISSUER@@'", preflight.Fail, "not an https origin", "not an https origin"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.EnrollURL, e.Issuer = srv.URL+"/api/lcm/v1/enroll", tc.issuer
+			res := resultsWith(p, e.config(t))
+			expect(t, res, "issuer: gateway.issuer origin", tc.originStatus, tc.origin)
+			r := expect(t, res, "issuer: gateway.issuer signing keys", preflight.Fail, tc.keys)
+			if !strings.Contains(r.Fix, "portal's public origin") {
+				t.Fatalf("fix %q", r.Fix)
+			}
+		})
+	}
+	// -offline still catches a wrong host by comparing with the enrolment URL.
+	e := newEnv(t)
+	e.EnrollURL, e.Issuer = "https://portal.example.org:8443/api/lcm/v1/enroll", "https://localhost:8443"
+	out, _ := runPreflight(t, e.config(t), "-offline")
+	if !strings.Contains(out, "issuer origin https://localhost:8443 differs from the enrolment URL's origin https://portal.example.org:8443") {
+		t.Fatalf("offline run:\n%s", out)
 	}
 }
 
