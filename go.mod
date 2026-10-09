@@ -9,7 +9,7 @@ require (
 	github.com/go-tangra/go-tangra-auth/sdk/v4 v4.1.0
 	github.com/go-tangra/go-tangra-lcm/sdk/v4 v4.1.0
 	github.com/go-tangra/go-tangra-portal/sdk/v4 v4.1.0
-	github.com/go-tangra/go-tangra/v4 v4.3.1
+	github.com/go-tangra/go-tangra/v4 v4.5.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/moby/moby/api v1.55.0
