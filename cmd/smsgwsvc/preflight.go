@@ -45,10 +45,12 @@ func preflightCmd(args []string, stdout, stderr io.Writer) int {
 	return preflight.Main(ctx, "sms-gw", args, stdout, stderr, "deploy/dev.yaml", p.plan)
 }
 
-// planner builds the checks; lookupEnv and now are seams for tests.
+// planner builds the checks; lookupEnv, now and issuerTLS are seams for
+// tests.
 type planner struct {
 	lookupEnv func(string) (string, bool)
 	now       func() time.Time
+	issuerTLS *tls.Config // nil: system roots, like a browser reaching the portal
 }
 
 func (p planner) plan(_ context.Context, path string) []preflight.Check {
@@ -65,7 +67,21 @@ func (p planner) plan(_ context.Context, path string) []preflight.Check {
 		checks = append(checks, ec...)
 	}
 	checks = append(checks, reachChecks(cfg, enrolled)...)
+	checks = append(checks, p.issuerChecks(cfg)...)
 	return append(checks, dbChecks(cfg)...)
+}
+
+// issuerChecks verifies gateway.issuer, which every operator token must
+// carry: a wrong value lets the service start, enrol and register, then
+// refuses every console request ("session ended"). The JWKS fetch proves the
+// value is the portal's auth origin; the offline comparison with the enrol
+// URL catches a wrong host even with -offline.
+func (p planner) issuerChecks(cfg config.Config) []preflight.Check {
+	var checks []preflight.Check
+	if cfg.Enroll.Enabled && cfg.Enroll.EnrollURL != "" {
+		checks = append(checks, preflight.IssuerOrigin("issuer: gateway.issuer origin", cfg.Gateway.Issuer, "enrolment URL", cfg.Enroll.EnrollURL))
+	}
+	return append(checks, preflight.IssuerJWKS("issuer: gateway.issuer signing keys", cfg.Gateway.Issuer, p.issuerTLS, preflight.DialTimeout))
 }
 
 // loadConfig loads the file with the service's strict loader and applies
