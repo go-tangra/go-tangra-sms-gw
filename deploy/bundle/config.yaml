@@ -1,0 +1,40 @@
+# sms-gw configuration, rendered by the gateway's add-module wizard: every
+# ${...} below was filled from the core's own configuration, so the issuer,
+# trust domain and addresses match the core exactly.
+service_name: sms-gw
+trust_domain: ${TRUST_DOMAIN}
+env: production
+identity:
+  provider: provided
+enroll:
+  enabled: true
+  enroll_url: ${LCM_ENROLL_URL}
+  lcm_grpc: ${LCM_GRPC}
+  tenant_id: ${MESH_TENANT_ID}
+  token_file: /tokens/enrollment.token
+  state_file: /state/svid.json
+authz: { source: file, path: /app/policy.yaml }
+server: { grpc_addr: 0.0.0.0:9983, http_addr: 0.0.0.0:9984 }
+admin: { addr: 127.0.0.1:9593 }
+discovery:
+  static:
+    gateway: ["${GATEWAY_GRPC}"]
+    auth: ["${AUTH_GRPC}"]
+db:
+  dsn: postgres://smsgw_app:${GEN_PASSWORD_2}@sms-gw-db:5432/sms_gw?sslmode=verify-full&sslrootcert=/tls/ca.pem
+  migrate_dsn: postgres://postgres:${GEN_PASSWORD_1}@sms-gw-db:5432/sms_gw?sslmode=verify-full&sslrootcert=/tls/ca.pem
+  max_conns: 16
+kek: { source: env, env: SMSGW_KEK }
+gateway: { service: gateway, issuer: ${GATEWAY_ISSUER}, auth_service: auth }
+public:
+  http_addr: 0.0.0.0:9901
+  trusted_proxies: []
+  max_body_bytes: 65536
+public_auth:
+  jwt_secret: { env: SMSGW_JWT_SECRET }
+  access_ttl_seconds: 7200
+  refresh_ttl_seconds: 604800
+acme: { enabled: false }
+webhook: { allow_http: false, allow_private: false, queue_size: 4096, workers: 4 }
+retention: { interval: 1h }
+query: { default_page_size: 50, max_page_size: 500 }

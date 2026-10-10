@@ -1,0 +1,29 @@
+# How sms-gw describes itself to the gateway's module catalogue (spec 035).
+# Each v* release publishes catalogue-entry.json and bundle.zip built from
+# this file and deploy/bundle/ (see .github/workflows/ci.yaml, job catalogue).
+schema: 1
+module: sms-gw
+display_name: SMS Gateway
+category: Communications
+summary: Hermes SMS API, carrier delivery receipts, callbacks and per-tenant SMS routing.
+image: ghcr.io/go-tangra/go-tangra-sms-gw
+routes:
+  prefixes: [/api/sms-gw, /m/sms-gw, /sms-gw]
+  names: [sms-gw]
+min_core: { gateway: 4.9.0, auth: 4.10.0 }
+bundle:
+  dir: deploy/bundle
+  templates: [config.yaml, policy.yaml]
+  tls_hosts: [sms-gw-db]
+host_inputs:
+  - key: MODULE_ADVERTISE_HOST
+    label: Host name the core uses to reach this module
+    pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$'
+  - key: MODULE_BIND_IP
+    label: IP address the module's mesh ports listen on (reachable from the core)
+    pattern: '^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$'
+  - key: SMS_PUBLIC_PORT
+    label: Host port of the public Hermes SMS API
+    pattern: '^[1-9][0-9]{1,4}$'
+    default: "9901"
+docs: https://github.com/go-tangra/go-tangra-sms-gw#readme

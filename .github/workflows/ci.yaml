@@ -199,3 +199,25 @@ jobs:
           cache-to: type=gha,mode=max
           secrets: |
             npm_token=${{ secrets.GITHUB_TOKEN }}
+
+  # Module catalogue entry (spec 035): on a release tag, publish
+  # catalogue-entry.json and bundle.zip (tangra-module.yaml, deploy/bundle/)
+  # with a GitHub artifact attestation, so gateways can list and install this
+  # release. Runs after the image is pushed: the action checks it is pullable.
+  catalogue:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: go-tangra/go-tangra/.github/actions/catalogue-entry@v4.7.0
+        with:
+          tool-version: v4.7.0
+          permissions-command: go run ./cmd/smsgw-catalogue-permissions
