@@ -1,0 +1,9 @@
+# Freya service-to-service policy for sms-gw (rendered for this core's trust
+# domain): deny by default; only the gateway reaches the management API.
+version: sms-gw-join-1
+rules:
+  - id: gateway-management
+    from: ["spiffe://${TRUST_DOMAIN}/svc/gateway"]
+    to: ["sms-gw"]
+    operations: ["GET *", "HEAD *", "POST *", "PATCH *", "DELETE *"]
+    effect: allow

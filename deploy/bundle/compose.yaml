@@ -1,0 +1,56 @@
+# sms-gw join bundle, rendered by the gateway's add-module wizard.
+#   docker compose up -d
+# Values come from .env (written by the gateway: core addresses, generated
+# passwords and keys, and the host inputs you gave). private/ holds the
+# single-use enrolment token, the mesh CA and this bundle's own TLS material.
+name: tangra-sms-gw
+services:
+  sms-gw-db:
+    image: timescale/timescaledb:2.17.2-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sms_gw
+      POSTGRES_PASSWORD: ${GEN_PASSWORD_1}
+      SMSGW_APP_PASSWORD: ${GEN_PASSWORD_2}
+    # The server key must belong to the postgres user: copy it before start.
+    entrypoint: ["sh", "-c", "install -d -o postgres -m 0700 /tls-pg && install -o postgres -m 0600 /tls/sms-gw-db.key /tls-pg/server.key && install -o postgres -m 0644 /tls/sms-gw-db.crt /tls-pg/server.crt && exec docker-entrypoint.sh \"$$@\"", "--"]
+    command: ["postgres", "-c", "ssl=on", "-c", "ssl_cert_file=/tls-pg/server.crt", "-c", "ssl_key_file=/tls-pg/server.key"]
+    volumes:
+      - sms-gw-db:/var/lib/postgresql/data
+      - ./private/tls:/tls:ro
+      - ./init-db.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sms_gw"]
+      interval: 5s
+      retries: 30
+  sms-gw-bootstrap:
+    image: ${MODULE_IMAGE}:${MODULE_VERSION}
+    command: ["bootstrap", "-config", "/app/config.yaml"]
+    environment: &smsgw-env
+      SMSGW_KEK: ${GEN_KEY_1}
+      SMSGW_JWT_SECRET: ${GEN_PASSWORD_3}
+    volumes: &smsgw-volumes
+      - ./config.yaml:/app/config.yaml:ro
+      - ./policy.yaml:/app/policy.yaml:ro
+      - ./private/enrollment.token:/tokens/enrollment.token:ro
+      - ./private/tls/ca.pem:/tls/ca.pem:ro
+      - sms-gw-state:/state
+    depends_on:
+      sms-gw-db: { condition: service_healthy }
+  sms-gw:
+    image: ${MODULE_IMAGE}:${MODULE_VERSION}
+    restart: unless-stopped
+    command: ["-config", "/app/config.yaml"]
+    environment:
+      <<: *smsgw-env
+      FREYA_ADVERTISE_HOST: ${MODULE_ADVERTISE_HOST}
+    ports:
+      - "${MODULE_BIND_IP}:9983:9983"
+      - "${MODULE_BIND_IP}:9984:9984"
+      - "${SMS_PUBLIC_PORT}:9901"
+    volumes: *smsgw-volumes
+    depends_on:
+      sms-gw-bootstrap: { condition: service_completed_successfully }
+volumes:
+  sms-gw-db: {}
+  sms-gw-state: {}
