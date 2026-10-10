@@ -62,14 +62,22 @@ func Root() string {
 	return filepath.Join(filepath.Dir(file), "..", "..", "..")
 }
 
-func freePort(t testing.TB) string {
+// freePorts returns n distinct free loopback addresses. All listeners stay
+// open until every port is chosen: closing each one before taking the next
+// let the kernel hand out the same port twice, and the service then refused
+// its configuration ("must be separate listeners").
+func freePorts(t testing.TB, n int) []string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	out := make([]string, 0, n)
+	for range n {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer l.Close()
+		out = append(out, l.Addr().String())
 	}
-	defer l.Close()
-	return l.Addr().String()
+	return out
 }
 
 // Start builds and runs the application on free loopback ports.
@@ -88,7 +96,8 @@ func Start(t testing.TB, o Options) *Running {
 		t.Fatal(err)
 	}
 	c.PublicAuth.JWTSecret = config.SecretRef{File: secret}
-	c.Server.HTTPAddr, c.Server.GRPCAddr, c.Admin.Addr, c.Public.HTTPAddr = freePort(t), freePort(t), freePort(t), freePort(t)
+	ports := freePorts(t, 4)
+	c.Server.HTTPAddr, c.Server.GRPCAddr, c.Admin.Addr, c.Public.HTTPAddr = ports[0], ports[1], ports[2], ports[3]
 	c.DB.DSN, c.DB.MigrateDSN = o.DSN, ""
 	c.Authz.Path = filepath.Join(root, "deploy", "policy.yaml")
 	if o.Configure != nil {

@@ -15,6 +15,23 @@ import (
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/config"
 )
 
+// freePorts returns n distinct free loopback addresses, holding every
+// listener open until all are chosen (closing each first can return the same
+// port twice).
+func freePorts(t *testing.T, n int) []string {
+	t.Helper()
+	out := make([]string, 0, n)
+	for range n {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer l.Close()
+		out = append(out, l.Addr().String())
+	}
+	return out
+}
+
 func freePort(t *testing.T) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -39,7 +56,8 @@ func testConfig(t *testing.T, dsn string) config.Config {
 		t.Fatal(err)
 	}
 	c.PublicAuth.JWTSecret = config.SecretRef{File: secret}
-	c.Server.HTTPAddr, c.Server.GRPCAddr, c.Admin.Addr, c.Public.HTTPAddr = freePort(t), freePort(t), freePort(t), freePort(t)
+	ports := freePorts(t, 4)
+	c.Server.HTTPAddr, c.Server.GRPCAddr, c.Admin.Addr, c.Public.HTTPAddr = ports[0], ports[1], ports[2], ports[3]
 	c.DB.DSN, c.DB.MigrateDSN = dsn, ""
 	c.Authz.Path = "../../deploy/policy.yaml"
 	return c
