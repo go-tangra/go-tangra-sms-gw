@@ -256,8 +256,8 @@ func (c Config) validateLimits(prod bool) []error {
 		u, err := url.Parse(m)
 		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil {
 			errs = append(errs, errors.New("config: monitoring.prometheus_url must be an http(s) URL without credentials"))
-		} else if prod && u.Scheme != "https" {
-			errs = append(errs, errors.New("config: monitoring.prometheus_url must use https in production"))
+		} else if prod && u.Scheme != "https" && !privateAddr(u.Hostname()) {
+			errs = append(errs, errors.New("config: monitoring.prometheus_url must use https in production unless its host is a private or loopback IP address"))
 		}
 	}
 	q := c.Query
@@ -265,4 +265,14 @@ func (c Config) validateLimits(prod bool) []error {
 		errs = append(errs, errors.New("config: query.default_page_size and query.max_page_size must satisfy 1 <= default <= max <= 10000"))
 	}
 	return errs
+}
+
+// privateAddr reports whether host is a literal private (RFC 1918, RFC 4193)
+// or loopback IP address. A plain-http Prometheus is accepted in production
+// only there: the platform Prometheus that receives the remote-written
+// module metrics speaks http on the private network. Host names are not
+// resolved, so a name always needs https.
+func privateAddr(host string) bool {
+	a, err := netip.ParseAddr(host)
+	return err == nil && (a.IsPrivate() || a.IsLoopback())
 }
