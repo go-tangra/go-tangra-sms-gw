@@ -1,4 +1,4 @@
-.PHONY: generate lint test test-ui test-integration build ui-build build-ui-embedded image compose-up compose-down bootstrap migrate-dry-run migrate-apply format capture-legacy capture-legacy-runtime
+.PHONY: generate lint test test-ui test-integration test-parity parity-tool build ui-build build-ui-embedded image compose-up compose-down bootstrap migrate-dry-run migrate-apply format capture-legacy capture-legacy-runtime
 GO ?= go
 
 generate:
@@ -19,6 +19,15 @@ test-ui:
 
 test-integration:
 	$(GO) test -race -tags integration -count=1 ./...
+
+# Live v3/v4 differential parity (needs the legacy checkout next to this
+# repository and PostgreSQL binaries; see tests/parity/doc.go).
+test-parity:
+	$(GO) test -tags parity -count=1 -v ./tests/parity/
+
+# Static read-only live comparison tool (cmd/smsgw-parity).
+parity-tool:
+	CGO_ENABLED=0 $(GO) build -trimpath -o bin/smsgw-parity ./cmd/smsgw-parity
 
 build:
 	$(GO) build ./...
