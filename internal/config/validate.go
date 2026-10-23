@@ -164,6 +164,9 @@ func (c Config) validatePublic(prod bool) []error {
 	if p.MaxBodyBytes < 1<<10 || p.MaxBodyBytes > 1<<20 {
 		errs = append(errs, errors.New("config: public.max_body_bytes must be within [1 KiB, 1 MiB]"))
 	}
+	if p.LegacyJSONStyle != "" && p.LegacyJSONStyle != "spaced" && p.LegacyJSONStyle != "compact" {
+		errs = append(errs, fmt.Errorf("config: public.legacy_json_style %q must be spaced or compact", p.LegacyJSONStyle))
+	}
 	for _, cidr := range p.TrustedProxies {
 		if _, err := netip.ParsePrefix(cidr); err != nil {
 			if _, err := netip.ParseAddr(cidr); err != nil {
