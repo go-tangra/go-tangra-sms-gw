@@ -227,3 +227,34 @@ func TestSecretRefRead(t *testing.T) {
 		t.Fatal("empty env accepted")
 	}
 }
+
+// TestMonitoringURLProduction: in production a plain-http Prometheus is
+// accepted only on a literal private or loopback address.
+func TestMonitoringURLProduction(t *testing.T) {
+	for url, ok := range map[string]bool{
+		"https://prom.example.org":        true,
+		"http://10.1.111.150:9190":        true,
+		"http://192.168.1.5:9090":         true,
+		"http://127.0.0.1:9090":           true,
+		"http://[::1]:9090":               true,
+		"http://[fd00::5]:9090":           true,
+		"http://prom.internal:9090":       false,
+		"http://89.25.32.111:9090":        false,
+		"http://10.1.111.150.nip.io:9190": false,
+	} {
+		t.Run(url, func(t *testing.T) {
+			c := devConfig(t)
+			c.Env = "production"
+			c.Monitoring.PrometheusURL = url
+			found := false
+			for _, err := range c.ValidateAll() {
+				if strings.Contains(err.Error(), "prometheus_url") {
+					found = true
+				}
+			}
+			if found == ok {
+				t.Fatalf("prometheus_url %s: accepted=%v, want %v", url, !found, ok)
+			}
+		})
+	}
+}
