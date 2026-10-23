@@ -1,3 +1,3 @@
 # sms-gw canary percentage: usernames whose crc32 % 100 is below N go to v4
-# (unless pinned in pins.map). Edit with: deploy/canary/route percent N
+# (unless pinned in pins.map). Change with: sms-canary.sh set N
 percent 0
