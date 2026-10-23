@@ -284,6 +284,32 @@ cat /srv/sms-gw-v4/compose.override.yaml
 The `--dry-run` output must mention only `compose-sms-gw-service-1`. Repeat
 it after editing the file in step 3, before running it for real.
 
+**Findings from the run on 2026-10-23:**
+
+- **v3's compose file doesn't validate today.** `docker compose config`
+  fails with `service "prometheus" depends on undefined service "backend"`.
+  - Service `prometheus` has `depends_on: [backend]`, and there is no
+    `backend` service. The file was edited on 2026-06-29, after v3's
+    container was created on 2026-06-02 (compose 5.1.3).
+  - The `prometheus` container itself was created by docker-compose 1.29.2
+    in 2025.
+  - Step 3 must therefore also remove those two `depends_on` lines.
+    Recreating with `--no-deps sms-gw-service` doesn't touch prometheus.
+  - A dry run on a temporary copy with only that fix validated, and showed
+    only `compose-sms-gw-service-1`.
+- **Orphan containers.** Compose reports orphans in project `compose`:
+  `compose-watchtower-1`, `pgadmin4_container`, `compose-jaeger-1` and
+  `2465f47d5ef2_hermes`.
+  - **Never pass `--remove-orphans`**, and never run `docker compose down`,
+    on this project. Either would delete them, including the `hermes`
+    container.
+- **Exec into v4 fails.** v4's image has no shell, so the `docker exec ... sh`
+  health check fails on v4. Use `curl -s 127.0.0.1:9902/health` on the host
+  instead; it returned `{"status":"ok"}`.
+- **There is no `.env`.** v3's settings, including `TRUSTED_PROXY_CIDRS`,
+  live only in `docker-compose.yaml`: line 179, with the `443:9443` publish
+  on line 130.
+
 ### 1. Create the LB network, prepare v4 ⚠ PROD CHANGE (no client impact: v4 has no traffic)
 
 Create the network once, explicitly. It's owned by no compose project:
@@ -404,9 +430,16 @@ service `sms-gw-service`:
    If the service lists its networks in the short form (`- app-tier`), switch
    it to the long form shown here. Keep any aliases or addresses it already
    has.
+4. **Remove `depends_on: [backend]` from service `prometheus`.** There is no
+   `backend` service, so without this the file doesn't validate and compose
+   refuses to run (see the findings in step 0). The prometheus container is
+   not recreated, because of `--no-deps`.
+
+Never add `--remove-orphans`. The project has orphan containers that must
+stay, `hermes` among them.
 
 The cutover recreates the v3 container anyway, to drop the 443 publish, so
-changes 2 and 3 cost no extra downtime. Without change 2, v3 records the LB's
+changes 2 to 4 cost no extra downtime. Without change 2, v3 records the LB's
 address as every client's IP: in login logs, audit, DLR `remote_address`, and
 the per-IP login and DLR rate-limit buckets, which all clients would then
 share (600/min login, 500/min DLR).
