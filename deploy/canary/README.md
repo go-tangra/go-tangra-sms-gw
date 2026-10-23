@@ -25,6 +25,11 @@ under [Review of the draft](#review-of-the-draft).
 > change to v4) before any client is moved to v4. If it doesn't, DLRs for
 > messages v4 sent are routed to v3, which drops them, because v3 doesn't have
 > those messages.
+>
+> Multipart messages are fine. v3 deduplicates multipart DLRs on
+> `(message_id, message_status)` and counts the parts, which means carriers
+> echo the parent `request_id` for every part. That parent id is the UUID the
+> LB routes on.
 
 ## Files
 
@@ -33,7 +38,7 @@ under [Review of the draft](#review-of-the-draft).
 | `conf.d/10-canary.cfg` | Routing rules (frontend `sms_public`), backends, stats. Based on the user's draft. |
 | `conf.d/20-tls.cfg` | Public TLS edge on :443. Terminates TLS and forwards to `sms_public` over the container loopback with PROXY v2. |
 | `maps/pins.map`, `maps/canary.map` | Routing state. The files are the only state. |
-| `entrypoint.sh` | Container entrypoint. Builds the combined PEM from v3's cert and key, checks the config, then runs `haproxy -W -db`. |
+| `entrypoint.sh` | Container entrypoint. Builds the combined PEM from `fullchain.pem` and `privkey.pem`, checks the config, then runs `haproxy -W -db`. `entrypoint.sh prepare` rebuilds and validates the PEM before every reload, so a renewed certificate needs no restart. |
 | `compose.yaml` | Standalone compose project for the LB (`/srv/sms-gw-lb`). |
 | `sms-canary.sh` | Operator script: `status`, `set`, `pin`, `unpin`, `reload`, and the `parity` hook. |
 | `test.sh`, `fakebackend/` | Local test. Runs real HAProxy 2.8 against two fake backends. |
@@ -47,8 +52,8 @@ under [Review of the draft](#review-of-the-draft).
                      │ frontend sms_tls  (mode tcp, ssl, alpn h2,http/1.1)      │
                      │        │ send-proxy-v2 → 127.0.0.1:9902 (container lo)   │
                      │ frontend sms_public (mode http, routing rules)           │
-                     │   ├─ backend sms_v3 ─▶ <v3 container>:9901  (v3 network) │
-                     │   └─ backend sms_v4 ─▶ <v4 container>:9901  (tangra-sms-gw_default)
+                     │   ├─ sms_v3 ─▶ compose-sms-gw-service-1:9901 (compose_app-tier, LB .223.250)
+                     │   └─ sms_v4 ─▶ tangra-sms-gw-sms-gw-1:9901 (tangra-sms-gw_default, LB .255.250)
                      │ admin socket + server-state → /srv/sms-gw-lb/run (host)  │
                      └──────────────────────────────────────────────────────────┘
  untouched: host :9900/:9901 → v3 container (the v3 portal 10.1.111.150 uses them)
@@ -115,7 +120,9 @@ logged raw.
   the v3 default. Sends are streamed and not buffered.
 - **Client IP.** `X-Forwarded-For` and `X-Real-IP` sent by clients are
   dropped. The LB sets `X-Real-IP: <client>` and `X-Forwarded-For: <client>`.
-  The backends must trust the LB's source address. See runbook steps 1 and 3.
+  The backends must trust the LB's source address: its fixed /32 on each
+  network (`192.168.223.250` on `compose_app-tier`, `172.21.255.250` on
+  `tangra-sms-gw_default`). See runbook steps 0, 1 and 3.
 - **Responses are passed through.** The LB adds no response headers (the
   debug header is off in prod). HTTP/1.1 header names keep Go's casing through
   `h1-case-adjust`, which covers the standard headers both services send. A
@@ -169,13 +176,16 @@ sms-canary.sh status                 # percent, pins, backend health (admin sock
 sms-canary.sh pin homes v4           # pin, then validate + hitless reload
 sms-canary.sh unpin homes            # back to the percent rule
 sms-canary.sh set 10                 # percent of unpinned clients on v4 (warns when lowering)
-sms-canary.sh reload                 # haproxy -c inside the container, dump health, SIGUSR2
+sms-canary.sh reload                 # rebuild+validate PEM and config in the container, dump health, SIGUSR2
 sms-canary.sh parity ...             # HOOK: runs $SMS_CANARY_PARITY_CMD (differential harness, wired separately)
 ```
 
 Each change rewrites the map atomically (mktemp next to the file, then `mv`).
-It then runs `entrypoint.sh check` (`haproxy -c` with the container's
-defaults); if that fails, nothing is signalled. Next it saves
+It then runs `entrypoint.sh prepare` inside the container. That rebuilds the
+PEM from the current certificate files into a candidate, then runs
+`haproxy -c` against it, which also catches a key that doesn't match its
+certificate. The candidate is installed only if that passes; if it fails,
+nothing is replaced or signalled. Next it saves
 the server state, sends SIGUSR2 to the master (PID 1 in the container), and
 waits until the admin socket is answered by the new worker. Listeners are
 handed over, so in-flight and new requests are not dropped. The test proves
@@ -192,7 +202,7 @@ The test needs no Docker and no root. It uses `$HAPROXY_BIN`, or `haproxy`
 and unpacks it with `dpkg -x`. It builds `fakebackend`, which echoes the
 backend name, path, query and headers, and mints HS256 JWTs shaped like the
 services' tokens. It then boots the real `entrypoint.sh` and `conf.d/` with a
-self-signed certificate, drives `sms-canary.sh`, and runs 185 assertions:
+self-signed certificate, drives `sms-canary.sh`, and runs 194 assertions:
 pins, JSON and form login (reordered fields, whitespace, unicode,
 `\u`-escapes, charset, a body near 64 KiB, a 200 KB body), refresh (JSON,
 form, camelCase), Bearer (missing, malformed, no username claim, Basic),
@@ -203,40 +213,75 @@ under load, refused broken config, XFF/X-Real-IP overwrite, HTTP/2 and
 ALPN, TLS 1.0/1.1 and RSA-kex refused, header case and body pass-through,
 debug header only on request and only in a debug build, stats not public,
 v4 down (fallback, 503 JSON for v7 ids and DLRs, state kept across a
-reload), v3 down, restart from files, and log hygiene.
+reload), v3 down, certificate renewal picked up by a reload (a mismatched
+cert/key pair is refused and the old certificate stays), restart from
+files, and log hygiene.
 
 ## Runbook (production)
 
 Steps marked **⚠ PROD CHANGE** change production. Everything else is
 read-only. Nothing here has been executed.
 
-### 0. Survey (read-only)
+### Production facts (surveyed read-only, 2026-10-23)
+
+| | v3 | v4 |
+|---|---|---|
+| container | `compose-sms-gw-service-1` | `tangra-sms-gw-sms-gw-1` |
+| compose project / dir | `compose` in `/root/.docker/compose`, service `sms-gw-service` | `tangra-sms-gw` in `/srv/sms-gw-v4` |
+| network (subnet) | `compose_app-tier` (192.168.208.0/20); v3 is .4, alias `sms-gw-service` | `tangra-sms-gw_default` (172.21.0.0/16), alias `sms-gw` |
+| plain HTTP inside | `:9901` | `:9901` |
+| LB fixed address (compose.yaml) | `192.168.223.250` | `172.21.255.250` |
+
+- Docker 28.2.2, compose v5.1.3.
+- Certificate: `/root/.docker/compose/ssl/fullchain.pem` and `privkey.pem`
+  (Let's Encrypt, SAN sms-gw.verax.net + sms.verax.net, expires 2026-12-22).
+- Renewal: root cron and `certbot.timer` run `certbot renew` with the nginx
+  authenticator (nginx is normally inactive). The deploy hook
+  `/etc/letsencrypt/renewal-hooks/deploy/sms-gw.sh` copies the sms.verax.net
+  cert and key into `/root/.docker/compose/ssl`, then runs
+  `docker restart sms-gw`.
+  **Existing bug:** no container is named `sms-gw`, so that restart fails, and
+  today v3 only picks up a renewed certificate when it happens to be
+  restarted for some other reason. Step 6 points the hook at the LB.
+
+### 0. Pre-checks (read-only)
 
 ```
-docker ps --format '{{.Names}}\t{{.Image}}\t{{.Ports}}' | grep -i sms
-# v3 container name, its compose project dir, and its network:
-docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}} {{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' <v3-container>
-docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' <v4-container>   # expect tangra-sms-gw_default
-docker port <v3-container>     # expect 9443/tcp -> 0.0.0.0:443, 9900 and 9901 published
-# Container-side plain port: v3 and v4 listen on 9901 inside their containers
-# (v3: plain listener; v4: public.http_addr). Confirm:
-docker exec <v3-container> sh -c 'wget -qO- 127.0.0.1:9901/health || curl -s 127.0.0.1:9901/health'
-# Certificate file names v3 uses (SMS_GW_TLS_CERT_PATH / _KEY_PATH) and the mount of /root/.docker/compose/ssl:
-docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' <v3-container> | grep -E 'TLS_(CERT|KEY)_PATH|TRUSTED_PROXY'
-docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' <v3-network> tangra-sms-gw_default
+# Fixed LB addresses must be free (and inside the subnets):
+docker network inspect compose_app-tier -f '{{range .Containers}}{{.IPv4Address}} {{.Name}}{{println}}{{end}}' | grep -F 192.168.223.250 || echo free
+docker network inspect tangra-sms-gw_default -f '{{range .Containers}}{{.IPv4Address}} {{.Name}}{{println}}{{end}}' | grep -F 172.21.255.250 || echo free
+# Where v3's TRUSTED_PROXY_CIDRS and the 443 publish are defined:
+grep -n -e 'TRUSTED_PROXY_CIDRS' -e '443' /root/.docker/compose/*.y*ml /root/.docker/compose/.env 2>/dev/null
+docker port compose-sms-gw-service-1          # today: 9443/tcp -> 0.0.0.0:443, plus 9900 and 9901
+docker exec compose-sms-gw-service-1 sh -c 'wget -qO- 127.0.0.1:9901/health || curl -s 127.0.0.1:9901/health'
+docker exec tangra-sms-gw-sms-gw-1 sh -c 'wget -qO- 127.0.0.1:9901/health || curl -s 127.0.0.1:9901/health'
 ```
 
-Use **container names** in `SMS_GW_V3_ADDR` and `SMS_GW_V4_ADDR`, not
-compose service names. If both projects name their service `sms-gw`, a
-container on both networks resolves that name ambiguously.
+**Fixed-address caveat.** Docker only accepts a fixed `ipv4_address` on a
+network whose subnet was *configured by the user* (an `ipam` block when the
+network was created). Compose's default networks usually get their subnet
+auto-assigned. In that case the LB fails to start with "user specified IP
+address is supported only when connecting to networks with user configured
+subnets". The preflight in step 2 tries the same addresses, so this shows up
+before the cutover. If it does:
 
-### 1. Prepare v4 ⚠ PROD CHANGE (v4 only, no client impact: v4 has no traffic)
+- **(a) Preferred:** trust the whole network subnet instead of a /32:
+  `192.168.208.0/20` for v3 and `172.21.0.0/16` for v4. Only the stack's own
+  containers live on those networks. Remove the two `ipv4_address` lines from
+  `compose.yaml`.
+- **(b) Alternative:** create a small user-subnet network shared by the LB and
+  each backend. This changes the v3 and v4 compose files more than (a) does.
+
+Never trust the LB's *dynamic* address: it changes when the container is
+recreated.
+
+### 1. Prepare v4 ⚠ PROD CHANGE (v4 only; no client impact, v4 has no traffic)
 
 In `/srv/sms-gw-v4`, set the v4 config:
 
 ```yaml
 public:
-  trusted_proxies: [<subnet of tangra-sms-gw_default>]   # the LB's source address on that network
+  trusted_proxies: [172.21.255.250/32]   # the LB's fixed address (fallback (a): 172.21.0.0/16)
   max_body_bytes: 65536
 public_auth:
   jwt_secret: { file: ... }       # SAME secret as v3's SMS_GW_JWT_SECRET
@@ -251,7 +296,8 @@ rate_limits:                      # v3 prod values (SMS_GW_LOGIN_*/SEND_*; DLR =
   dlr_burst: 100
 ```
 
-Deploy the v4 image that mints UUIDv7 message ids, then restart v4. Check:
+Deploy the v4 image that mints UUIDv7 message ids, then restart v4 with
+`cd /srv/sms-gw-v4 && docker compose up -d`. Check:
 
 - `curl -s 127.0.0.1:9902/health` returns `{"status":"ok"}`.
 - The secrets match:
@@ -260,83 +306,94 @@ Deploy the v4 image that mints UUIDv7 message ids, then restart v4. Check:
 - Provider `callback_url`s in v4 are unchanged
   (`https://sms-gw.verax.net/hermes/v1/sms/dlr`).
 
-### 2. Install the LB ⚠ PROD CHANGE (new files and container only, no traffic yet)
+### 2. Install the LB ⚠ PROD CHANGE (new files and a test container only, no traffic yet)
 
 ```
 install -d -m 755 /srv/sms-gw-lb /srv/sms-gw-lb/maps /srv/sms-gw-lb/conf.d
 install -d -m 700 /srv/sms-gw-lb/run
 cp compose.yaml entrypoint.sh sms-canary.sh /srv/sms-gw-lb/ && cp conf.d/*.cfg /srv/sms-gw-lb/conf.d/ && cp maps/*.map /srv/sms-gw-lb/maps/
-cat >/srv/sms-gw-lb/.env <<'EOF'
-V3_NETWORK=<v3 network>
-SMS_GW_V3_ADDR=<v3 container>:9901
-SMS_GW_V4_ADDR=<v4 container>:9901
-CANARY_TLS_CERT=/ssl/<cert file>
-CANARY_TLS_KEY=/ssl/<key file>
-EOF
 cd /srv/sms-gw-lb && docker compose config >/dev/null && docker compose pull
 ```
 
-Preflight on a loopback test port, with 443 untouched and the same networks:
+Preflight on a loopback test port, with 443 untouched. It uses the same
+networks **and the same fixed addresses**, so it also proves Docker accepts
+them:
 
 ```
-docker run -d --name sms-gw-lb-preflight --user 0:0 --network <v3 network> \
-  --env-file /srv/sms-gw-lb/.env -e CANARY_TLS_BIND=:8443 -e CANARY_RUN_DIR=/tmp/run -e CANARY_DROP_USER=haproxy \
+docker run -d --name sms-gw-lb-preflight --user 0:0 \
+  --network compose_app-tier --ip 192.168.223.250 \
+  -e SMS_GW_V3_ADDR=compose-sms-gw-service-1:9901 -e SMS_GW_V4_ADDR=tangra-sms-gw-sms-gw-1:9901 \
+  -e CANARY_TLS_CERT=/ssl/fullchain.pem -e CANARY_TLS_KEY=/ssl/privkey.pem \
+  -e CANARY_TLS_BIND=:8443 -e CANARY_RUN_DIR=/tmp/run -e CANARY_DROP_USER=haproxy \
   -v /srv/sms-gw-lb/conf.d:/usr/local/etc/haproxy/conf.d:ro -v /srv/sms-gw-lb/maps:/usr/local/etc/haproxy/maps:ro \
   -v /srv/sms-gw-lb/entrypoint.sh:/usr/local/etc/haproxy/entrypoint.sh:ro -v /root/.docker/compose/ssl:/ssl:ro \
   -p 127.0.0.1:8443:8443 --entrypoint /usr/local/etc/haproxy/entrypoint.sh haproxy:2.8
-docker network connect tangra-sms-gw_default sms-gw-lb-preflight
+docker network connect --ip 172.21.255.250 tangra-sms-gw_default sms-gw-lb-preflight
 curl -s --resolve sms-gw.verax.net:8443:127.0.0.1 https://sms-gw.verax.net:8443/health      # {"status":"ok"} from v3
-openssl s_client -connect 127.0.0.1:8443 -servername sms-gw.verax.net </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256
-openssl s_client -connect 127.0.0.1:443 -servername sms-gw.verax.net </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256    # v3 today: must be identical
+openssl s_client -connect 127.0.0.1:8443 -servername sms-gw.verax.net </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256 -enddate
+openssl s_client -connect 127.0.0.1:443 -servername sms-gw.verax.net </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256 -enddate   # v3 today
 docker logs sms-gw-lb-preflight 2>&1 | tail      # both servers UP, route=default-v3
-docker rm -f sms-gw-lb-preflight
+docker rm -f sms-gw-lb-preflight                 # frees the fixed addresses again
 ```
+
+Compare the two fingerprints. If v3 serves an older certificate than the
+files hold (renewed after v3's last restart, because of the hook bug), the LB
+will serve the newer one, which is the correct one.
+
+If `docker run --ip` or `network connect --ip` is refused, use fallback (a)
+from step 0 and adjust step 1 and step 3 to the subnets.
 
 ### 3. Cut over :443 from v3 to the LB ⚠ PROD CHANGE (seconds of downtime on :443)
 
-Change v3's compose file **only on the 443 port line**: remove `- "443:9443"`.
-Ports 9900 and 9901 stay published exactly as they are, because the v3
-portal uses them. Keep a backup of the file.
+In v3's compose configuration under `/root/.docker/compose` (service
+`sms-gw-service`), make exactly two changes. Back up the files first.
 
-**Needs a decision: v3 trusted proxies.** Over Docker networking, v3 sees
-the LB's container address. v3 trusts `X-Real-IP` only from
-`TRUSTED_PROXY_CIDRS` (`10.1.111.0/24,89.25.32.0/24`). Without a change, v3
-records the LB's IP as the client IP: in login logs, audit, DLR
-`remote_address`, and the **per-IP login and DLR rate-limit buckets**, which
-all clients would then share (600/min login, 500/min DLR). The fix is a
-second, one-line v3 env change: append `<v3 network subnet>` to
-`TRUSTED_PROXY_CIDRS`. This goes beyond "only the 443 line" and needs the
-user's approval. If it isn't approved, the canary still works, with degraded
-IP attribution on v3.
+1. **Remove the `443:9443` port line.** Ports 9900 and 9901 stay published
+   exactly as they are, because the v3 portal (10.1.111.150) uses them. No
+   other port line changes.
+2. **Append the LB's address to `TRUSTED_PROXY_CIDRS`**, wherever it is
+   defined (compose `environment:` or the env file):
+   `10.1.111.0/24,89.25.32.0/24,192.168.223.250/32` (fallback (a):
+   `192.168.208.0/20`).
 
-Run the cutover in a low-traffic window, with both commands back to back
+The second change is recommended because the cutover recreates the v3
+container anyway, so it costs no extra downtime. Without it, v3 records the
+LB's address as every client's IP: in login logs, audit, DLR
+`remote_address`, and the per-IP login and DLR rate-limit buckets, which all
+clients would then share (600/min login, 500/min DLR).
+
+Run the cutover in a low-traffic window, with the two commands back to back
 (images already pulled):
 
 ```
-cd <v3 compose dir> && docker compose up -d <v3 service> \
+cd /root/.docker/compose && docker compose up -d sms-gw-service \
   && cd /srv/sms-gw-lb && docker compose up -d
 ```
 
-`up -d` recreates only v3, which briefly interrupts 9900/9901 for the portal
-too. Never run `docker compose down` on the v3 project while the LB is
-attached to its network.
+`up -d sms-gw-service` recreates only v3, which briefly interrupts 9900/9901
+for the portal too. Never run `docker compose down` on the `compose` project
+while the LB is attached to `compose_app-tier`.
 
 Verify:
 
 1. `curl -s https://sms-gw.verax.net/health` from outside returns
    `{"status":"ok"}`. Check the certificate fingerprint, and that
    `openssl s_client -tls1_1` is refused.
-2. `docker logs -f sms-gw-lb` shows `route=default-v3 user=jobsbg|cars|homes`
+2. `docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}={{$v.IPAddress}} {{end}}' sms-gw-lb`
+   shows `compose_app-tier=192.168.223.250 tangra-sms-gw_default=172.21.255.250`.
+   `docker exec compose-sms-gw-service-1 env | grep TRUSTED_PROXY_CIDRS` shows
+   the /32.
+3. `docker logs -f sms-gw-lb` shows `route=default-v3 user=jobsbg|cars|homes`
    on sends and logins, `route=dlr-v3` on DLRs, and both servers UP.
-3. v3 DB (`tangra_sms`): `SELECT username, login_ip, event_time FROM
-   sms_login_log ORDER BY id DESC LIMIT 10;` shows client IPs, not the LB's
-   (only if the trusted-proxy change was made). `SELECT remote_address,
-   create_time FROM sms_dlr ORDER BY create_time DESC LIMIT 10;` shows the
-   carrier's IPs.
-4. **v3 portal:** the SMS pages load (message list, send drawer, providers,
+4. v3 DB (`tangra_sms`): `SELECT username, login_ip, event_time FROM
+   sms_login_log ORDER BY id DESC LIMIT 10;` shows client IPs, not
+   192.168.223.250. `SELECT remote_address, create_time FROM sms_dlr ORDER BY
+   create_time DESC LIMIT 10;` shows the carrier's IPs.
+5. **v3 portal:** the SMS pages load (message list, send drawer, providers,
    templates, dashboard).
-5. **v4 portal:** the SMS pages load (the same set) through the gateway.
-6. `sms-canary.sh status`: percent 0, no pins, both backends UP.
+6. **v4 portal:** the SMS pages load (the same set) through the gateway.
+7. `/srv/sms-gw-lb/sms-canary.sh status`: percent 0, no pins, both backends
+   UP.
 
 ### 4. Move homes ⚠ PROD CHANGE
 
@@ -371,6 +428,32 @@ Repeat the step 4 checks for each. jobsbg carries about 76% of the traffic,
 so also watch the v4 send rate limits (6000/min, burst 200) and latency
 (`%Tr` in the log).
 
+### 6. Certificate renewal hook ⚠ PROD CHANGE (do this right after step 3, well before 2026-12-22)
+
+After the cutover the LB serves :443. It builds its PEM from
+`/root/.docker/compose/ssl` at start and again on every
+`sms-canary.sh reload`. The SIGUSR2 reload re-reads the rebuilt PEM, so no
+restart is needed. In `/etc/letsencrypt/renewal-hooks/deploy/sms-gw.sh`,
+replace the broken line `docker restart sms-gw` with:
+
+```
+/srv/sms-gw-lb/sms-canary.sh reload
+```
+
+The reload validates the new cert and key pair first. If they don't match,
+the hook fails, and the LB keeps serving the previous certificate. Don't add a
+v3 restart. v3's own TLS listener is no longer published after the cutover,
+and v3 reads the same files whenever it restarts.
+
+Verify without waiting for a renewal:
+`/srv/sms-gw-lb/sms-canary.sh reload`, then
+`openssl s_client -connect sms-gw.verax.net:443 </dev/null 2>/dev/null | openssl x509 -noout -enddate`.
+After the real renewal (around late November), the end date moves.
+`certbot renew --dry-run` doesn't run deploy hooks; run
+`certbot renew --dry-run --run-deploy-hooks` only if you want to exercise the
+hook. The LB doesn't use port 80, so it doesn't interfere with the nginx
+authenticator.
+
 ### Rollback
 
 - **One client ⚠ PROD CHANGE:** `sms-canary.sh pin <user> v3`. The change is
@@ -382,9 +465,11 @@ so also watch the v4 send rate limits (6000/min, burst 200) and latency
   `sms-canary.sh pin <user> v3` for each v4 pin.
 - **Remove the LB ⚠ PROD CHANGE:** first make sure every client is on v3 and
   v4's DLRs have drained. Then `cd /srv/sms-gw-lb && docker compose down`,
-  restore the `- "443:9443"` line (and the old `TRUSTED_PROXY_CIDRS`) in
-  v3's compose, and run `docker compose up -d` for v3. :443 is down for
-  seconds. Any later v4 DLR would then reach v3 and be dropped.
+  restore the `443:9443` line (and the old `TRUSTED_PROXY_CIDRS`) in
+  `/root/.docker/compose`, and run `docker compose up -d sms-gw-service`.
+  :443 is down for seconds. Point the certbot hook at
+  `docker restart compose-sms-gw-service-1`, the real container name. Any
+  later v4 DLR would then reach v3 and be dropped.
 
 ## Review of the draft
 
@@ -439,6 +524,9 @@ Changes to the user's draft. Each one is marked `CHANGED:` in the config.
     container and in `test.sh`. `CANARY_DROP_USER` lets the master start as
     root (to read the root-only cert mount) while the workers run as
     `haproxy`.
+14. **Certificate reloads.** `entrypoint.sh prepare` rebuilds and validates
+    the PEM on every reload, so a renewed certificate is served after
+    `sms-canary.sh reload` without a restart. A mismatched pair is refused.
 
 Checked and kept as is, on HAProxy 2.8.30: `http_auth_bearer` (also accepts a
 lower-case `bearer`), `jwt_payload_query` (no value for malformed tokens),

@@ -1,21 +1,26 @@
 # sms-gw canary balancer — standalone production compose project for host
-# sms-gw. Lives in /srv/sms-gw-lb (this file, .env, entrypoint.sh, conf.d/,
-# maps/, run/; see README.md). Takes ONLY host port 443. Host ports 9900/9901 stay with the v3
-# container (the v3 portal uses them directly); 127.0.0.1:9902 stays with v4.
+# sms-gw. Lives in /srv/sms-gw-lb (this file, entrypoint.sh, sms-canary.sh,
+# conf.d/, maps/, run/; see README.md).
 #
-# The balancer reaches the backends over Docker networks, by container name:
-#   - the v3 compose project's network   (external, name in V3_NETWORK)
-#   - v4's network tangra-sms-gw_default (external)
-# Use CONTAINER NAMES (unique per host), not compose service names: both
-# projects may call their service "sms-gw", and a container attached to both
-# networks would then resolve one name to two different instances.
+# Takes ONLY host port 443. Host ports 9900/9901 stay with the v3 container
+# (the v3 portal uses them directly); 127.0.0.1:9902 stays with v4.
 #
-# Everything host-specific comes from .env next to this file:
-#   V3_NETWORK=<v3 project network>          e.g. sms-gw_default
-#   SMS_GW_V3_ADDR=<v3 container name>:9901
-#   SMS_GW_V4_ADDR=<v4 container name>:9901
-#   CANARY_TLS_CERT=/ssl/<cert file name>    (same files v3 uses today)
-#   CANARY_TLS_KEY=/ssl/<key file name>
+# The balancer reaches the backends over their Docker networks, by CONTAINER
+# NAME on the internal plain port 9901:
+#   v3  compose-sms-gw-service-1  project "compose" (/root/.docker/compose),
+#       network compose_app-tier (192.168.208.0/20)
+#   v4  tangra-sms-gw-sms-gw-1    project "tangra-sms-gw" (/srv/sms-gw-v4),
+#       network tangra-sms-gw_default (172.21.0.0/16)
+# Container names are unique per host; the service aliases (sms-gw-service,
+# sms-gw) are not guaranteed to stay unambiguous for a container on both
+# networks.
+#
+# Fixed LB addresses, so each backend trusts exactly one /32 for X-Real-IP /
+# X-Forwarded-For (v3 TRUSTED_PROXY_CIDRS, v4 public.trusted_proxies). They
+# sit at the top of each subnet, away from Docker's sequential allocation.
+# Check they are free before the first start (README, runbook step 0); Docker
+# accepts a fixed address only on networks whose subnet was configured by the
+# user — if it refuses, see the README fallback.
 name: sms-gw-lb
 
 services:
@@ -28,10 +33,11 @@ services:
     user: "0:0"
     entrypoint: ["/usr/local/etc/haproxy/entrypoint.sh"]
     environment:
-      SMS_GW_V3_ADDR: ${SMS_GW_V3_ADDR:?set SMS_GW_V3_ADDR in .env}
-      SMS_GW_V4_ADDR: ${SMS_GW_V4_ADDR:?set SMS_GW_V4_ADDR in .env}
-      CANARY_TLS_CERT: ${CANARY_TLS_CERT:?set CANARY_TLS_CERT in .env}
-      CANARY_TLS_KEY: ${CANARY_TLS_KEY:?set CANARY_TLS_KEY in .env}
+      SMS_GW_V3_ADDR: compose-sms-gw-service-1:9901
+      SMS_GW_V4_ADDR: tangra-sms-gw-sms-gw-1:9901
+      # Let's Encrypt files the certbot deploy hook copies here (same as v3).
+      CANARY_TLS_CERT: /ssl/fullchain.pem
+      CANARY_TLS_KEY: /ssl/privkey.pem
       CANARY_TLS_BIND: ":443"
       CANARY_RUN_DIR: /var/run/sms-canary
       CANARY_MAP_DIR: /usr/local/etc/haproxy/maps
@@ -41,17 +47,20 @@ services:
     volumes:
       - ./conf.d:/usr/local/etc/haproxy/conf.d:ro
       - ./entrypoint.sh:/usr/local/etc/haproxy/entrypoint.sh:ro
-      # The DIRECTORY is mounted (not the files): sms-canary.sh replaces the files
-      # by rename, which a single-file bind mount would not see.
+      # The DIRECTORY is mounted (not the files): sms-canary.sh replaces the
+      # files by rename, which a single-file bind mount would not see.
       - ./maps:/usr/local/etc/haproxy/maps:ro
       # Admin socket + server-state file, read/written by sms-canary.sh.
       - ./run:/var/run/sms-canary
+      # Directory mount, so certificate renewals (file replacement) are seen.
       - /root/.docker/compose/ssl:/ssl:ro
     tmpfs:
       - /run/canary-tls:mode=0700
     networks:
-      - v3
-      - v4
+      v3:
+        ipv4_address: 192.168.223.250
+      v4:
+        ipv4_address: 172.21.255.250
     logging:
       driver: json-file
       options: { max-size: "50m", max-file: "5" }
@@ -60,7 +69,7 @@ services:
 networks:
   v3:
     external: true
-    name: ${V3_NETWORK:?set V3_NETWORK in .env}
+    name: compose_app-tier
   v4:
     external: true
     name: tangra-sms-gw_default

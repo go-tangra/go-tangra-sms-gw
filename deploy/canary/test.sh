@@ -416,6 +416,33 @@ start_fake v3 "$P_V3"
 wait_state sms_v3 UP
 eq "v3 back" v3 "$(call "$BASE/")"
 
+section "certificate renewal: reload picks up the new cert, a bad one is refused"
+served_fp() { openssl s_client -connect "127.0.0.1:$P_TLS" </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256; }
+file_fp() { openssl x509 -in "$1" -noout -fingerprint -sha256; }
+FP0=$(served_fp)
+eq "serving the original certificate" "$(file_fp "$WORK/tls/cert.pem")" "$FP0"
+# What the certbot deploy hook does: new fullchain + privkey in place.
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+	-keyout "$WORK/tls/key2.pem" -out "$WORK/tls/cert2.pem" -days 2 -subj /CN=sms-gw.test 2>/dev/null
+cp "$WORK/tls/cert2.pem" "$WORK/tls/cert.pem"
+cp "$WORK/tls/key2.pem" "$WORK/tls/key.pem"
+"$SMSC" reload >/dev/null
+eq "renewed certificate served after sms-canary.sh reload (no restart)" "$(file_fp "$WORK/tls/cert2.pem")" "$(served_fp)"
+eq "same master process" yes "$(kill -0 "$MASTER_PID" && echo yes || echo no)"
+FP1=$(served_fp)
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+	-keyout "$WORK/tls/key3.pem" -out "$WORK/tls/cert3.pem" -days 2 -subj /CN=sms-gw.test 2>/dev/null
+cp "$WORK/tls/cert3.pem" "$WORK/tls/cert.pem"   # key.pem still the previous key: mismatch
+W2=$(worker)
+eq "cert/key mismatch: reload refused" refused "$("$SMSC" reload >/dev/null 2>&1 && echo accepted || echo refused)"
+eq "worker unchanged after the refused reload" "$W2" "$(worker)"
+eq "previous certificate still served" "$FP1" "$(served_fp)"
+eq "live PEM not replaced" "$(file_fp "$WORK/tls/cert2.pem")" "$(file_fp "$CANARY_TLS_PEM")"
+cp "$WORK/tls/key3.pem" "$WORK/tls/key.pem"
+"$SMSC" reload >/dev/null
+eq "fixed pair accepted" "$(file_fp "$WORK/tls/cert3.pem")" "$(served_fp)"
+eq "PEM is private (0600)" 600 "$(stat -c %a "$CANARY_TLS_PEM")"
+
 section "restart without CANARY_DEBUG: state from files, no debug header"
 "$SMSC" pin cars v4 >/dev/null
 stop_hap

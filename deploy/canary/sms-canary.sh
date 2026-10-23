@@ -5,7 +5,7 @@
 #   sms-canary.sh set <0-100>            share of unpinned clients on V4
 #   sms-canary.sh pin <user> <v3|v4>     pin one API client (username)
 #   sms-canary.sh unpin <user>           remove a pin (client follows percent)
-#   sms-canary.sh reload                 validate the config and reload
+#   sms-canary.sh reload                 validate, refresh the TLS cert, reload
 #   sms-canary.sh parity [args...]       V3/V4 HTTP differential check (hook)
 #
 # Rollback of everything to V3:   set 0, then pin every V4 client to v3 (or
@@ -75,12 +75,15 @@ sys.stdout.write(out.decode())' "$SOCK" "$1"
 	fi
 }
 
-# Validate with the entrypoint's defaults (the container env alone lacks them).
+# Validate the configuration and rebuild the TLS PEM from the current
+# certificate files (entrypoint.sh prepare), with the entrypoint's defaults —
+# the container env alone lacks them. A renewed certificate is therefore
+# picked up by every reload.
 check_config() {
 	if [[ -n ${SMS_CANARY_HAPROXY_PID:-} ]]; then
-		CANARY_CONF_DIR=$DIR/conf.d "$DIR/entrypoint.sh" check
+		CANARY_CONF_DIR=$DIR/conf.d "$DIR/entrypoint.sh" prepare
 	else
-		docker exec "$CONTAINER" /usr/local/etc/haproxy/entrypoint.sh check
+		docker exec "$CONTAINER" /usr/local/etc/haproxy/entrypoint.sh prepare
 	fi
 }
 
@@ -89,7 +92,7 @@ reload() {
 		echo "files changed; reload skipped (SMS_CANARY_NO_RELOAD=1)"
 		return
 	fi
-	check_config || die "configuration check failed; NOT reloaded (the map files are already changed — fix them and run reload)"
+	check_config >/dev/null || die "configuration/certificate check failed; NOT reloaded (the running balancer is unchanged; a map file change is already on disk — fix it and run reload)"
 	# Carry health across the reload (see server-state-file in 10-canary.cfg).
 	if [[ -S $SOCK ]]; then
 		hap "show servers state" >"$STATE.tmp" && mv -f "$STATE.tmp" "$STATE" || warn "could not dump server state"
