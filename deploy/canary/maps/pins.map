@@ -1,0 +1,3 @@
+# sms-gw canary pins: <username> <v3|v4>, one per line.
+# Explicit per-client override; wins over the percent bucket in canary.map.
+# Edit with deploy/canary/route (updates the running balancer and this file).

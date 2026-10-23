@@ -1,0 +1,66 @@
+# sms-gw canary balancer — standalone production compose project for host
+# sms-gw. Lives in /srv/sms-gw-lb (this file, .env, entrypoint.sh, conf.d/,
+# maps/, run/; see README.md). Takes ONLY host port 443. Host ports 9900/9901 stay with the v3
+# container (the v3 portal uses them directly); 127.0.0.1:9902 stays with v4.
+#
+# The balancer reaches the backends over Docker networks, by container name:
+#   - the v3 compose project's network   (external, name in V3_NETWORK)
+#   - v4's network tangra-sms-gw_default (external)
+# Use CONTAINER NAMES (unique per host), not compose service names: both
+# projects may call their service "sms-gw", and a container attached to both
+# networks would then resolve one name to two different instances.
+#
+# Everything host-specific comes from .env next to this file:
+#   V3_NETWORK=<v3 project network>          e.g. sms-gw_default
+#   SMS_GW_V3_ADDR=<v3 container name>:9901
+#   SMS_GW_V4_ADDR=<v4 container name>:9901
+#   CANARY_TLS_CERT=/ssl/<cert file name>    (same files v3 uses today)
+#   CANARY_TLS_KEY=/ssl/<key file name>
+name: sms-gw-lb
+
+services:
+  lb:
+    image: haproxy:2.8
+    container_name: sms-gw-lb
+    restart: unless-stopped
+    # Starts as root to read the root-only certificate mount and bind 443;
+    # the HAProxy workers then drop to the image's haproxy user.
+    user: "0:0"
+    entrypoint: ["/usr/local/etc/haproxy/entrypoint.sh"]
+    environment:
+      SMS_GW_V3_ADDR: ${SMS_GW_V3_ADDR:?set SMS_GW_V3_ADDR in .env}
+      SMS_GW_V4_ADDR: ${SMS_GW_V4_ADDR:?set SMS_GW_V4_ADDR in .env}
+      CANARY_TLS_CERT: ${CANARY_TLS_CERT:?set CANARY_TLS_CERT in .env}
+      CANARY_TLS_KEY: ${CANARY_TLS_KEY:?set CANARY_TLS_KEY in .env}
+      CANARY_TLS_BIND: ":443"
+      CANARY_RUN_DIR: /var/run/sms-canary
+      CANARY_MAP_DIR: /usr/local/etc/haproxy/maps
+      CANARY_DROP_USER: haproxy
+    ports:
+      - "443:443"
+    volumes:
+      - ./conf.d:/usr/local/etc/haproxy/conf.d:ro
+      - ./entrypoint.sh:/usr/local/etc/haproxy/entrypoint.sh:ro
+      # The DIRECTORY is mounted (not the files): sms-canary.sh replaces the files
+      # by rename, which a single-file bind mount would not see.
+      - ./maps:/usr/local/etc/haproxy/maps:ro
+      # Admin socket + server-state file, read/written by sms-canary.sh.
+      - ./run:/var/run/sms-canary
+      - /root/.docker/compose/ssl:/ssl:ro
+    tmpfs:
+      - /run/canary-tls:mode=0700
+    networks:
+      - v3
+      - v4
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "5" }
+    stop_grace_period: 30s
+
+networks:
+  v3:
+    external: true
+    name: ${V3_NETWORK:?set V3_NETWORK in .env}
+  v4:
+    external: true
+    name: tangra-sms-gw_default
