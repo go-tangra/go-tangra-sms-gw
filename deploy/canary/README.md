@@ -52,10 +52,13 @@ under [Review of the draft](#review-of-the-draft).
                      │ frontend sms_tls  (mode tcp, ssl, alpn h2,http/1.1)      │
                      │        │ send-proxy-v2 → 127.0.0.1:9902 (container lo)   │
                      │ frontend sms_public (mode http, routing rules)           │
-                     │   ├─ sms_v3 ─▶ compose-sms-gw-service-1:9901 (compose_app-tier, LB .223.250)
-                     │   └─ sms_v4 ─▶ tangra-sms-gw-sms-gw-1:9901 (tangra-sms-gw_default, LB .255.250)
+                     │   ├─ sms_v3 ─▶ compose-sms-gw-service-1:9901            │
+                     │   └─ sms_v4 ─▶ tangra-sms-gw-sms-gw-1:9901              │
+                     │      both over network sms-gw-lb 10.250.0.0/24, LB = .10 │
                      │ admin socket + server-state → /srv/sms-gw-lb/run (host)  │
                      └──────────────────────────────────────────────────────────┘
+ v3 and v4 also join sms-gw-lb (an extra network; their own networks stay and
+ keep the default gateway). The LB joins only sms-gw-lb.
  untouched: host :9900/:9901 → v3 container (the v3 portal 10.1.111.150 uses them)
             host 127.0.0.1:9902 → v4 container (v4's own publish)
             v4 mesh 89.25.32.111:9983/9984 via the v4 gateway (v4 portal)
@@ -120,9 +123,8 @@ logged raw.
   the v3 default. Sends are streamed and not buffered.
 - **Client IP.** `X-Forwarded-For` and `X-Real-IP` sent by clients are
   dropped. The LB sets `X-Real-IP: <client>` and `X-Forwarded-For: <client>`.
-  The backends must trust the LB's source address: its fixed /32 on each
-  network (`192.168.223.250` on `compose_app-tier`, `172.21.255.250` on
-  `tangra-sms-gw_default`). See runbook steps 0, 1 and 3.
+  The backends must trust the LB's source address, its fixed
+  `10.250.0.10/32` on the `sms-gw-lb` network. See runbook steps 1 and 3.
 - **Responses are passed through.** The LB adds no response headers (the
   debug header is off in prod). HTTP/1.1 header names keep Go's casing through
   `h1-case-adjust`, which covers the standard headers both services send. A
@@ -227,61 +229,90 @@ read-only. Nothing here has been executed.
 | | v3 | v4 |
 |---|---|---|
 | container | `compose-sms-gw-service-1` | `tangra-sms-gw-sms-gw-1` |
-| compose project / dir | `compose` in `/root/.docker/compose`, service `sms-gw-service` | `tangra-sms-gw` in `/srv/sms-gw-v4` |
-| network (subnet) | `compose_app-tier` (192.168.208.0/20); v3 is .4, alias `sms-gw-service` | `tangra-sms-gw_default` (172.21.0.0/16), alias `sms-gw` |
+| compose | `/root/.docker/compose/docker-compose.yaml`, project `compose`, service `sms-gw-service` | `/srv/sms-gw-v4/compose.yaml` + `compose.override.yaml`, project `tangra-sms-gw`; config `runtime/config.yaml` |
+| own network | `compose_app-tier` (192.168.208.0/20, auto-assigned; created by docker-compose v1 1.29.2) | `tangra-sms-gw_default` (172.21.0.0/16, auto-assigned) |
 | plain HTTP inside | `:9901` | `:9901` |
-| LB fixed address (compose.yaml) | `192.168.223.250` | `172.21.255.250` |
+| on `sms-gw-lb` (new) | attached in step 3 | attached in step 1 |
 
+- **LB network:** `sms-gw-lb`, bridge, user-configured subnet
+  `10.250.0.0/24` (free on the host; in use are 172.17–21.0.0/16,
+  192.168.208.0/20, 192.168.224.0/20 and 89.25.32.0/25). The LB is at the
+  fixed address `10.250.0.10`.
+  - Docker accepts fixed addresses only on networks with a user-configured
+    subnet. Neither existing network has one, which is why the LB has its own
+    network.
+  - The network is created explicitly and is `external` everywhere, so no
+    `docker compose down` deletes it while others use it.
 - Docker 28.2.2, compose v5.1.3.
-- Certificate: `/root/.docker/compose/ssl/fullchain.pem` and `privkey.pem`
-  (Let's Encrypt, SAN sms-gw.verax.net + sms.verax.net, expires 2026-12-22).
-- Renewal: root cron and `certbot.timer` run `certbot renew` with the nginx
-  authenticator (nginx is normally inactive). The deploy hook
+- **Certificate:** `/root/.docker/compose/ssl/fullchain.pem` and
+  `privkey.pem` (Let's Encrypt, SAN sms-gw.verax.net + sms.verax.net,
+  sha256 `49:40:F4…`, expires 2026-12-22). v3 currently serves exactly these
+  files.
+- **Renewal:** root cron and `certbot.timer` run `certbot renew` with the
+  nginx authenticator (nginx is normally inactive). The deploy hook
   `/etc/letsencrypt/renewal-hooks/deploy/sms-gw.sh` copies the sms.verax.net
   cert and key into `/root/.docker/compose/ssl`, then runs
-  `docker restart sms-gw`.
-  **Existing bug:** no container is named `sms-gw`, so that restart fails, and
-  today v3 only picks up a renewed certificate when it happens to be
-  restarted for some other reason. Step 6 points the hook at the LB.
+  `docker restart sms-gw`. **Existing bug:** no container is named `sms-gw`,
+  so the restart fails, and v3 only picks up a renewed certificate when it
+  happens to be restarted for some other reason. Step 6 points the hook at
+  the LB.
+- **Default gateway on two networks.** A container on two networks takes its
+  default route, and the network its published ports are bound on, from one
+  of them. To keep that on the container's own network, the extra
+  `sms-gw-lb` attachment goes in with `gw_priority` set higher on the
+  original network (Docker ≥ 28, compose ≥ 2.33).
 
 ### 0. Pre-checks (read-only)
 
 ```
-# Fixed LB addresses must be free (and inside the subnets):
-docker network inspect compose_app-tier -f '{{range .Containers}}{{.IPv4Address}} {{.Name}}{{println}}{{end}}' | grep -F 192.168.223.250 || echo free
-docker network inspect tangra-sms-gw_default -f '{{range .Containers}}{{.IPv4Address}} {{.Name}}{{println}}{{end}}' | grep -F 172.21.255.250 || echo free
-# Where v3's TRUSTED_PROXY_CIDRS and the 443 publish are defined:
-grep -n -e 'TRUSTED_PROXY_CIDRS' -e '443' /root/.docker/compose/*.y*ml /root/.docker/compose/.env 2>/dev/null
+docker network ls --format '{{.Name}}' | grep -x sms-gw-lb || echo "sms-gw-lb: not yet created (expected)"
+ip route | grep -F 10.250.0. || echo "10.250.0.0/24: unused (expected)"
 docker port compose-sms-gw-service-1          # today: 9443/tcp -> 0.0.0.0:443, plus 9900 and 9901
 docker exec compose-sms-gw-service-1 sh -c 'wget -qO- 127.0.0.1:9901/health || curl -s 127.0.0.1:9901/health'
 docker exec tangra-sms-gw-sms-gw-1 sh -c 'wget -qO- 127.0.0.1:9901/health || curl -s 127.0.0.1:9901/health'
+# v3: where TRUSTED_PROXY_CIDRS and the 443 publish are defined
+grep -n -e TRUSTED_PROXY_CIDRS -e 443 -e 'networks' -e 'app-tier' /root/.docker/compose/docker-compose.yaml /root/.docker/compose/.env 2>/dev/null
+# v3 was created with docker-compose v1 (1.29.2) and is now run with compose v2+
+# (hyphenated names). Prove that compose v5 renders the file and would recreate
+# ONLY sms-gw-service (not redis, local_pgdb, prometheus, ...):
+cd /root/.docker/compose && docker compose -f docker-compose.yaml config >/dev/null && echo config ok
+cd /root/.docker/compose && docker compose -f docker-compose.yaml up -d --no-deps --dry-run sms-gw-service
+# v4: read the override before changing it
+cat /srv/sms-gw-v4/compose.override.yaml
 ```
 
-**Fixed-address caveat.** Docker only accepts a fixed `ipv4_address` on a
-network whose subnet was *configured by the user* (an `ipam` block when the
-network was created). Compose's default networks usually get their subnet
-auto-assigned. In that case the LB fails to start with "user specified IP
-address is supported only when connecting to networks with user configured
-subnets". The preflight in step 2 tries the same addresses, so this shows up
-before the cutover. If it does:
+The `--dry-run` output must mention only `compose-sms-gw-service-1`. Repeat
+it after editing the file in step 3, before running it for real.
 
-- **(a) Preferred:** trust the whole network subnet instead of a /32:
-  `192.168.208.0/20` for v3 and `172.21.0.0/16` for v4. Only the stack's own
-  containers live on those networks. Remove the two `ipv4_address` lines from
-  `compose.yaml`.
-- **(b) Alternative:** create a small user-subnet network shared by the LB and
-  each backend. This changes the v3 and v4 compose files more than (a) does.
+### 1. Create the LB network, prepare v4 ⚠ PROD CHANGE (no client impact: v4 has no traffic)
 
-Never trust the LB's *dynamic* address: it changes when the container is
-recreated.
+Create the network once, explicitly. It's owned by no compose project:
 
-### 1. Prepare v4 ⚠ PROD CHANGE (v4 only; no client impact, v4 has no traffic)
+```
+docker network create --driver bridge --subnet 10.250.0.0/24 --gateway 10.250.0.1 \
+  --label org.go-tangra.purpose=sms-gw-canary-lb sms-gw-lb
+```
 
-In `/srv/sms-gw-v4`, set the v4 config:
+v4, in `/srv/sms-gw-v4/compose.override.yaml` (merge it into what is
+already there; the service is `sms-gw`):
+
+```yaml
+services:
+  sms-gw:
+    networks:
+      default:
+        gw_priority: 100        # keeps default route + 127.0.0.1:9902 publish on its own network
+      sms-gw-lb: {}
+networks:
+  sms-gw-lb:
+    external: true
+```
+
+v4, in `/srv/sms-gw-v4/runtime/config.yaml`:
 
 ```yaml
 public:
-  trusted_proxies: [172.21.255.250/32]   # the LB's fixed address (fallback (a): 172.21.0.0/16)
+  trusted_proxies: [10.250.0.10/32]   # the LB, and nothing else
   max_body_bytes: 65536
 public_auth:
   jwt_secret: { file: ... }       # SAME secret as v3's SMS_GW_JWT_SECRET
@@ -296,17 +327,23 @@ rate_limits:                      # v3 prod values (SMS_GW_LOGIN_*/SEND_*; DLR =
   dlr_burst: 100
 ```
 
-Deploy the v4 image that mints UUIDv7 message ids, then restart v4 with
-`cd /srv/sms-gw-v4 && docker compose up -d`. Check:
+Deploy the v4 image that mints UUIDv7 message ids, then run
+`cd /srv/sms-gw-v4 && docker compose config >/dev/null && docker compose up -d`.
+Check:
 
-- `curl -s 127.0.0.1:9902/health` returns `{"status":"ok"}`.
+- `curl -s 127.0.0.1:9902/health` returns `{"status":"ok"}`, so the publish
+  still works.
+- `docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}={{$v.IPAddress}} {{end}}' tangra-sms-gw-sms-gw-1`
+  lists both networks.
+- The v4 portal still works through the mesh, so outbound routing is
+  unchanged.
 - The secrets match:
   `printf %s "$V3_SECRET" | sha256sum` equals `sha256sum` of v4's secret
   file. Mind trailing newlines: compare the bytes the service actually reads.
 - Provider `callback_url`s in v4 are unchanged
   (`https://sms-gw.verax.net/hermes/v1/sms/dlr`).
 
-### 2. Install the LB ⚠ PROD CHANGE (new files and a test container only, no traffic yet)
+### 2. Install the LB and preflight ⚠ PROD CHANGE (new files and a test container only, no traffic)
 
 ```
 install -d -m 755 /srv/sms-gw-lb /srv/sms-gw-lb/maps /srv/sms-gw-lb/conf.d
@@ -315,84 +352,108 @@ cp compose.yaml entrypoint.sh sms-canary.sh /srv/sms-gw-lb/ && cp conf.d/*.cfg /
 cd /srv/sms-gw-lb && docker compose config >/dev/null && docker compose pull
 ```
 
-Preflight on a loopback test port, with 443 untouched. It uses the same
-networks **and the same fixed addresses**, so it also proves Docker accepts
-them:
+Preflight on a loopback test port, with 443 untouched. It uses the real
+network and fixed address. v3 isn't on `sms-gw-lb` yet, so the preflight
+container also joins `compose_app-tier` (dynamic address, preflight only) to
+reach it.
 
 ```
 docker run -d --name sms-gw-lb-preflight --user 0:0 \
-  --network compose_app-tier --ip 192.168.223.250 \
+  --network sms-gw-lb --ip 10.250.0.10 \
   -e SMS_GW_V3_ADDR=compose-sms-gw-service-1:9901 -e SMS_GW_V4_ADDR=tangra-sms-gw-sms-gw-1:9901 \
   -e CANARY_TLS_CERT=/ssl/fullchain.pem -e CANARY_TLS_KEY=/ssl/privkey.pem \
   -e CANARY_TLS_BIND=:8443 -e CANARY_RUN_DIR=/tmp/run -e CANARY_DROP_USER=haproxy \
   -v /srv/sms-gw-lb/conf.d:/usr/local/etc/haproxy/conf.d:ro -v /srv/sms-gw-lb/maps:/usr/local/etc/haproxy/maps:ro \
   -v /srv/sms-gw-lb/entrypoint.sh:/usr/local/etc/haproxy/entrypoint.sh:ro -v /root/.docker/compose/ssl:/ssl:ro \
   -p 127.0.0.1:8443:8443 --entrypoint /usr/local/etc/haproxy/entrypoint.sh haproxy:2.8
-docker network connect --ip 172.21.255.250 tangra-sms-gw_default sms-gw-lb-preflight
+docker network connect compose_app-tier sms-gw-lb-preflight
 curl -s --resolve sms-gw.verax.net:8443:127.0.0.1 https://sms-gw.verax.net:8443/health      # {"status":"ok"} from v3
 openssl s_client -connect 127.0.0.1:8443 -servername sms-gw.verax.net </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256 -enddate
-openssl s_client -connect 127.0.0.1:443 -servername sms-gw.verax.net </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256 -enddate   # v3 today
-docker logs sms-gw-lb-preflight 2>&1 | tail      # both servers UP, route=default-v3
-docker rm -f sms-gw-lb-preflight                 # frees the fixed addresses again
+openssl s_client -connect 127.0.0.1:443 -servername sms-gw.verax.net </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256 -enddate   # v3 today: identical
+docker logs sms-gw-lb-preflight 2>&1 | tail      # sms_v3 and sms_v4 UP (v4 over sms-gw-lb), route=default-v3
+docker rm -f sms-gw-lb-preflight                 # frees 10.250.0.10 again
 ```
-
-Compare the two fingerprints. If v3 serves an older certificate than the
-files hold (renewed after v3's last restart, because of the hook bug), the LB
-will serve the newer one, which is the correct one.
-
-If `docker run --ip` or `network connect --ip` is refused, use fallback (a)
-from step 0 and adjust step 1 and step 3 to the subnets.
 
 ### 3. Cut over :443 from v3 to the LB ⚠ PROD CHANGE (seconds of downtime on :443)
 
-In v3's compose configuration under `/root/.docker/compose` (service
-`sms-gw-service`), make exactly two changes. Back up the files first.
+Back up `/root/.docker/compose/docker-compose.yaml` (and `.env`, if
+`TRUSTED_PROXY_CIDRS` lives there). Then make exactly these changes for
+service `sms-gw-service`:
 
 1. **Remove the `443:9443` port line.** Ports 9900 and 9901 stay published
    exactly as they are, because the v3 portal (10.1.111.150) uses them. No
    other port line changes.
-2. **Append the LB's address to `TRUSTED_PROXY_CIDRS`**, wherever it is
-   defined (compose `environment:` or the env file):
-   `10.1.111.0/24,89.25.32.0/24,192.168.223.250/32` (fallback (a):
-   `192.168.208.0/20`).
+2. **Append the LB to `TRUSTED_PROXY_CIDRS`:**
+   `10.1.111.0/24,89.25.32.0/24,10.250.0.10/32`.
+3. **Add the external network**, keeping `app-tier` and giving it the
+   default gateway:
 
-The second change is recommended because the cutover recreates the v3
-container anyway, so it costs no extra downtime. Without it, v3 records the
-LB's address as every client's IP: in login logs, audit, DLR
-`remote_address`, and the per-IP login and DLR rate-limit buckets, which all
-clients would then share (600/min login, 500/min DLR).
+   ```yaml
+   services:
+     sms-gw-service:
+       networks:
+         app-tier:
+           gw_priority: 100
+         sms-gw-lb: {}
+   networks:
+     sms-gw-lb:
+       external: true
+   ```
+
+   If the service lists its networks in the short form (`- app-tier`), switch
+   it to the long form shown here. Keep any aliases or addresses it already
+   has.
+
+The cutover recreates the v3 container anyway, to drop the 443 publish, so
+changes 2 and 3 cost no extra downtime. Without change 2, v3 records the LB's
+address as every client's IP: in login logs, audit, DLR `remote_address`, and
+the per-IP login and DLR rate-limit buckets, which all clients would then
+share (600/min login, 500/min DLR).
+
+Check the edited file is valid and touches only v3 (read-only):
+
+```
+cd /root/.docker/compose && docker compose -f docker-compose.yaml config >/dev/null \
+  && docker compose -f docker-compose.yaml up -d --no-deps --dry-run sms-gw-service    # only compose-sms-gw-service-1
+```
 
 Run the cutover in a low-traffic window, with the two commands back to back
 (images already pulled):
 
 ```
-cd /root/.docker/compose && docker compose up -d sms-gw-service \
+cd /root/.docker/compose && docker compose -f docker-compose.yaml up -d --no-deps sms-gw-service \
   && cd /srv/sms-gw-lb && docker compose up -d
 ```
 
-`up -d sms-gw-service` recreates only v3, which briefly interrupts 9900/9901
-for the portal too. Never run `docker compose down` on the `compose` project
-while the LB is attached to `compose_app-tier`.
+This recreates only v3, which briefly interrupts 9900/9901 for the portal
+too.
 
 Verify:
 
 1. `curl -s https://sms-gw.verax.net/health` from outside returns
-   `{"status":"ok"}`. Check the certificate fingerprint, and that
-   `openssl s_client -tls1_1` is refused.
-2. `docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}={{$v.IPAddress}} {{end}}' sms-gw-lb`
-   shows `compose_app-tier=192.168.223.250 tangra-sms-gw_default=172.21.255.250`.
-   `docker exec compose-sms-gw-service-1 env | grep TRUSTED_PROXY_CIDRS` shows
-   the /32.
+   `{"status":"ok"}`. Check the certificate fingerprint (`49:40:F4…`), and
+   that `openssl s_client -tls1_1` is refused.
+2. Network state:
+   - `docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}={{$v.IPAddress}} {{end}}' sms-gw-lb`
+     shows only `sms-gw-lb=10.250.0.10`.
+   - The same command on `compose-sms-gw-service-1` shows `compose_app-tier`
+     and `sms-gw-lb`.
+   - `docker port compose-sms-gw-service-1` shows 9900 and 9901 and no 443.
+   - `docker exec compose-sms-gw-service-1 env | grep TRUSTED_PROXY_CIDRS`
+     shows `10.250.0.10/32`.
 3. `docker logs -f sms-gw-lb` shows `route=default-v3 user=jobsbg|cars|homes`
    on sends and logins, `route=dlr-v3` on DLRs, and both servers UP.
-4. v3 DB (`tangra_sms`): `SELECT username, login_ip, event_time FROM
-   sms_login_log ORDER BY id DESC LIMIT 10;` shows client IPs, not
-   192.168.223.250. `SELECT remote_address, create_time FROM sms_dlr ORDER BY
-   create_time DESC LIMIT 10;` shows the carrier's IPs.
-5. **v3 portal:** the SMS pages load (message list, send drawer, providers,
+4. v3 DB (`tangra_sms`):
+   - `SELECT username, login_ip, event_time FROM sms_login_log ORDER BY id DESC LIMIT 10;`
+     shows client IPs, not 10.250.0.10.
+   - `SELECT remote_address, create_time FROM sms_dlr ORDER BY create_time DESC LIMIT 10;`
+     shows the carrier's IPs.
+5. v3's outbound traffic is unchanged: sends reach Voicecom (new messages
+   get a provider status) and the redis/postgres dependencies work.
+6. **v3 portal:** the SMS pages load (message list, send drawer, providers,
    templates, dashboard).
-6. **v4 portal:** the SMS pages load (the same set) through the gateway.
-7. `/srv/sms-gw-lb/sms-canary.sh status`: percent 0, no pins, both backends
+7. **v4 portal:** the SMS pages load (the same set) through the gateway.
+8. `/srv/sms-gw-lb/sms-canary.sh status`: percent 0, no pins, both backends
    UP.
 
 ### 4. Move homes ⚠ PROD CHANGE
@@ -463,13 +524,23 @@ authenticator.
   v4-sent messages.
 - **All clients ⚠ PROD CHANGE:** `sms-canary.sh set 0`, then
   `sms-canary.sh pin <user> v3` for each v4 pin.
-- **Remove the LB ⚠ PROD CHANGE:** first make sure every client is on v3 and
-  v4's DLRs have drained. Then `cd /srv/sms-gw-lb && docker compose down`,
-  restore the `443:9443` line (and the old `TRUSTED_PROXY_CIDRS`) in
-  `/root/.docker/compose`, and run `docker compose up -d sms-gw-service`.
-  :443 is down for seconds. Point the certbot hook at
-  `docker restart compose-sms-gw-service-1`, the real container name. Any
-  later v4 DLR would then reach v3 and be dropped.
+- **Remove the LB ⚠ PROD CHANGE.** First make sure every client is on v3
+  and v4's DLRs have drained; any later v4 DLR would reach v3 and be dropped.
+  Then, in this order:
+  1. In `/root/.docker/compose/docker-compose.yaml`, restore the `443:9443`
+     line and the old `TRUSTED_PROXY_CIDRS`. Leave the `sms-gw-lb` network
+     attachment in place for now.
+  2. Run `cd /srv/sms-gw-lb && docker compose down`, then immediately
+     `cd /root/.docker/compose && docker compose -f docker-compose.yaml up -d --no-deps sms-gw-service`.
+     :443 is down for seconds. (`down` doesn't delete `sms-gw-lb`, because
+     it's external.)
+  3. Point the certbot hook at `docker restart compose-sms-gw-service-1`,
+     the real container name.
+  4. **Last**, remove the network attachments: drop `sms-gw-lb` (and the
+     `gw_priority` lines) from v3's compose at its next convenient recreate,
+     and from v4's `compose.override.yaml` (`docker compose up -d` there).
+     Then run `docker network rm sms-gw-lb`, which fails while anything is
+     still attached.
 
 ## Review of the draft
 

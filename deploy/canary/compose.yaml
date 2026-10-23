@@ -5,22 +5,16 @@
 # Takes ONLY host port 443. Host ports 9900/9901 stay with the v3 container
 # (the v3 portal uses them directly); 127.0.0.1:9902 stays with v4.
 #
-# The balancer reaches the backends over their Docker networks, by CONTAINER
-# NAME on the internal plain port 9901:
-#   v3  compose-sms-gw-service-1  project "compose" (/root/.docker/compose),
-#       network compose_app-tier (192.168.208.0/20)
-#   v4  tangra-sms-gw-sms-gw-1    project "tangra-sms-gw" (/srv/sms-gw-v4),
-#       network tangra-sms-gw_default (172.21.0.0/16)
-# Container names are unique per host; the service aliases (sms-gw-service,
-# sms-gw) are not guaranteed to stay unambiguous for a container on both
-# networks.
-#
-# Fixed LB addresses, so each backend trusts exactly one /32 for X-Real-IP /
-# X-Forwarded-For (v3 TRUSTED_PROXY_CIDRS, v4 public.trusted_proxies). They
-# sit at the top of each subnet, away from Docker's sequential allocation.
-# Check they are free before the first start (README, runbook step 0); Docker
-# accepts a fixed address only on networks whose subnet was configured by the
-# user — if it refuses, see the README fallback.
+# Network: the LB joins ONLY its own bridge network "sms-gw-lb"
+# (10.250.0.0/24, created explicitly by the operator in runbook step 1 with a
+# user-configured subnet, so the fixed address below is accepted). It is
+# EXTERNAL here on purpose: `docker compose down` of this project must never
+# delete a network the v3 and v4 containers are attached to. v3
+# (compose-sms-gw-service-1) and v4 (tangra-sms-gw-sms-gw-1) attach to it from
+# their own compose files and are reached by container name on their internal
+# plain port 9901. Both backends trust exactly 10.250.0.10/32 for
+# X-Real-IP / X-Forwarded-For (v3 TRUSTED_PROXY_CIDRS, v4
+# public.trusted_proxies).
 name: sms-gw-lb
 
 services:
@@ -57,19 +51,14 @@ services:
     tmpfs:
       - /run/canary-tls:mode=0700
     networks:
-      v3:
-        ipv4_address: 192.168.223.250
-      v4:
-        ipv4_address: 172.21.255.250
+      lb:
+        ipv4_address: 10.250.0.10
     logging:
       driver: json-file
       options: { max-size: "50m", max-file: "5" }
     stop_grace_period: 30s
 
 networks:
-  v3:
+  lb:
     external: true
-    name: compose_app-tier
-  v4:
-    external: true
-    name: tangra-sms-gw_default
+    name: sms-gw-lb
