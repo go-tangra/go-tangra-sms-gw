@@ -244,18 +244,24 @@ read-only. Nothing here has been executed.
   - The network is created explicitly and is `external` everywhere, so no
     `docker compose down` deletes it while others use it.
 - Docker 28.2.2, compose v5.1.3.
-- **Certificate:** `/root/.docker/compose/ssl/fullchain.pem` and
-  `privkey.pem` (Let's Encrypt, SAN sms-gw.verax.net + sms.verax.net,
-  sha256 `49:40:F4…`, expires 2026-12-22). v3 currently serves exactly these
-  files.
+- **Certificate:** before the cutover, v3 served
+  `/root/.docker/compose/ssl/fullchain.pem` and `privkey.pem`. That's the
+  Let's Encrypt `sms.verax.net` lineage: SAN sms-gw.verax.net and
+  sms.verax.net, sha256 `49:40:F4…`, expiring 2026-12-22. Note that
+  `privkey.pem` there is world-readable (0666).
+  - The LB reads its own copy in `/srv/sms-gw-lb/ssl`: directory 0700, key
+    0600, owner root.
+  - v4 has no public TLS listener of its own.
+  - v3 treats a missing or expired certificate as a warning: it disables its
+    HTTPS listener and keeps serving plain HTTP.
 - **Renewal:** root cron and `certbot.timer` run `certbot renew` with the
   nginx authenticator (nginx is normally inactive). The deploy hook
-  `/etc/letsencrypt/renewal-hooks/deploy/sms-gw.sh` copies the sms.verax.net
-  cert and key into `/root/.docker/compose/ssl`, then runs
+  `/etc/letsencrypt/renewal-hooks/deploy/sms-gw.sh` copied the sms.verax.net
+  cert and key into `/root/.docker/compose/ssl`, then ran
   `docker restart sms-gw`. **Existing bug:** no container is named `sms-gw`,
-  so the restart fails, and v3 only picks up a renewed certificate when it
-  happens to be restarted for some other reason. Step 6 points the hook at
-  the LB.
+  so the restart failed, and v3 picked up a renewed certificate only when it
+  happened to be restarted for some other reason. Step 6 rewrites the hook
+  for the LB.
 - **Default gateway on two networks.** A container on two networks takes its
   default route, and the network its published ports are bound on, from one
   of them. To keep that on the container's own network, the extra
@@ -374,7 +380,9 @@ Check:
 
 ```
 install -d -m 755 /srv/sms-gw-lb /srv/sms-gw-lb/maps /srv/sms-gw-lb/conf.d
-install -d -m 700 /srv/sms-gw-lb/run
+install -d -m 700 /srv/sms-gw-lb/run /srv/sms-gw-lb/ssl
+install -m 644 /etc/letsencrypt/live/sms.verax.net/fullchain.pem /srv/sms-gw-lb/ssl/fullchain.pem
+install -m 600 /etc/letsencrypt/live/sms.verax.net/privkey.pem /srv/sms-gw-lb/ssl/privkey.pem
 cp compose.yaml entrypoint.sh sms-canary.sh /srv/sms-gw-lb/ && cp conf.d/*.cfg /srv/sms-gw-lb/conf.d/ && cp maps/*.map /srv/sms-gw-lb/maps/
 cd /srv/sms-gw-lb && docker compose config >/dev/null && docker compose pull
 ```
@@ -391,7 +399,7 @@ docker run -d --name sms-gw-lb-preflight --user 0:0 \
   -e CANARY_TLS_CERT=/ssl/fullchain.pem -e CANARY_TLS_KEY=/ssl/privkey.pem \
   -e CANARY_TLS_BIND=:8443 -e CANARY_RUN_DIR=/tmp/run -e CANARY_DROP_USER=haproxy \
   -v /srv/sms-gw-lb/conf.d:/usr/local/etc/haproxy/conf.d:ro -v /srv/sms-gw-lb/maps:/usr/local/etc/haproxy/maps:ro \
-  -v /srv/sms-gw-lb/entrypoint.sh:/usr/local/etc/haproxy/entrypoint.sh:ro -v /root/.docker/compose/ssl:/ssl:ro \
+  -v /srv/sms-gw-lb/entrypoint.sh:/usr/local/etc/haproxy/entrypoint.sh:ro -v /srv/sms-gw-lb/ssl:/ssl:ro \
   -p 127.0.0.1:8443:8443 --entrypoint /usr/local/etc/haproxy/entrypoint.sh haproxy:2.8
 docker network connect compose_app-tier sms-gw-lb-preflight
 curl -s --resolve sms-gw.verax.net:8443:127.0.0.1 https://sms-gw.verax.net:8443/health      # {"status":"ok"} from v3
@@ -540,20 +548,34 @@ so also watch the v4 send rate limits (6000/min, burst 200) and latency
 
 ### 6. Certificate renewal hook ⚠ PROD CHANGE (do this right after step 3, well before 2026-12-22)
 
-After the cutover the LB serves :443. It builds its PEM from
-`/root/.docker/compose/ssl` at start and again on every
-`sms-canary.sh reload`. The SIGUSR2 reload re-reads the rebuilt PEM, so no
-restart is needed. In `/etc/letsencrypt/renewal-hooks/deploy/sms-gw.sh`,
-replace the broken line `docker restart sms-gw` with:
+After the cutover the LB serves :443. It builds its PEM from its own copy in
+`/srv/sms-gw-lb/ssl`, at start and again on every `sms-canary.sh reload`.
+The SIGUSR2 reload re-reads the rebuilt PEM, so no restart is needed.
+
+In `/etc/letsencrypt/renewal-hooks/deploy/sms-gw.sh`, replace the two
+`/root/.docker/compose/ssl` copies and the broken `docker restart sms-gw`
+with this (this is how production runs it since 2026-10-23):
 
 ```
+# HAProxy (serves :443 for sms-gw); key readable only by root
+install -m 644 -o root -g root $CRT /srv/sms-gw-lb/ssl/fullchain.pem
+install -m 600 -o root -g root $KEY /srv/sms-gw-lb/ssl/privkey.pem
+
+# v3 rollback path (v3 serves :443 itself again only after a rollback); drop when v3 is retired
+cp -f $CRT /root/.docker/compose/ssl
+cp -f $KEY /root/.docker/compose/ssl
+
 /srv/sms-gw-lb/sms-canary.sh reload
 ```
 
-The reload validates the new cert and key pair first. If they don't match,
-the hook fails, and the LB keeps serving the previous certificate. Don't add a
-v3 restart. v3's own TLS listener is no longer published after the cutover,
-and v3 reads the same files whenever it restarts.
+- **The reload validates first.** It checks the new cert and key pair before
+  switching. If they don't match, the hook fails and the LB keeps serving the
+  previous certificate.
+- **The copies to `/root/.docker/compose/ssl` stay while v3 exists.** v3
+  doesn't use them, since its TLS listener is no longer published, but a
+  rollback that puts v3 back on :443 needs current files there: v3 loads its
+  certificate only at start. Remove those two lines when v3 is retired.
+- **Don't add a v3 restart to the hook.**
 
 Verify without waiting for a renewal:
 `/srv/sms-gw-lb/sms-canary.sh reload`, then
@@ -583,8 +605,11 @@ authenticator.
      `cd /root/.docker/compose && docker compose -f docker-compose.yaml up -d --no-deps sms-gw-service`.
      :443 is down for seconds. (`down` doesn't delete `sms-gw-lb`, because
      it's external.)
-  3. Point the certbot hook at `docker restart compose-sms-gw-service-1`,
-     the real container name.
+  3. In the certbot hook, remove the `/srv/sms-gw-lb/ssl` install lines and
+     replace `/srv/sms-gw-lb/sms-canary.sh reload` with
+     `docker restart compose-sms-gw-service-1`, the real container name. The
+     `/root/.docker/compose/ssl` copies the hook kept making are what v3
+     serves again.
   4. **Last**, remove the network attachments: drop `sms-gw-lb` (and the
      `gw_priority` lines) from v3's compose at its next convenient recreate,
      and from v4's `compose.override.yaml` (`docker compose up -d` there).
