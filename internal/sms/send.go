@@ -197,7 +197,7 @@ func (s *Service) Send(ctx context.Context, tenant string, actor repo.Actor, req
 		priority = 2
 	}
 	tid := int64(req.TemplateID)
-	msg := repo.Message{ID: repo.NewID(), TenantID: tenant, Actor: actor, Sid: int64(sender.Sid()), Recipient: recipient, Priority: priority,
+	msg := repo.Message{ID: repo.NewMessageID(), TenantID: tenant, Actor: actor, Sid: int64(sender.Sid()), Recipient: recipient, Priority: priority,
 		ProviderID: p.ID, TemplateID: &tid, Text: text, StatusCode: -1, StatusMessage: voicecom.StatusText(-1)}
 	if req.SMS != nil {
 		msg.Data, _ = json.Marshal(map[string]any{"sms": req.SMS, "properties": properties(req.Properties)})

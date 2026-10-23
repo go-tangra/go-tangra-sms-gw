@@ -433,6 +433,9 @@ func TestPlatformAcceptance(t *testing.T) {
 	if a := r.json(t)["message"].(map[string]any)["actor"].(map[string]any); a["kind"] != "platform" {
 		t.Fatalf("manual send actor %v", a)
 	}
+	if id, _ := r.json(t)["message"].(map[string]any)["id"].(string); !uuidV7.MatchString(id) {
+		t.Fatalf("manual send id %q is not a version 7 UUID", id)
+	}
 	for _, c := range []struct {
 		method, path, token string
 		body                any
