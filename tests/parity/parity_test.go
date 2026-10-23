@@ -37,13 +37,16 @@ func TestParity(t *testing.T) {
 		a.Set(k, v)
 		b.Set(k, v)
 	}
-	steps := append(corpus(), preFlood(profProd.name)...)
-	steps = append(steps, floods(profProd)...)
-	outs := Run(steps, a, b, KnownDifferences)
+	outs := Run(corpus(), a, b, KnownDifferences)
 
 	// The read-only live tool against the same pair, with a v3-issued token.
-	tok := a.Do(post("/hermes/v1/login", login("client_a"))).JSON()["access_token"]
-	for _, mode := range [][]string{{"SMS_PARITY_BEARER=" + tok.(string)}, {"SMS_PARITY_BEARER="}} {
+	// It runs before the floods: those drain the per-IP login bucket, and a
+	// 429 here would leave no token.
+	tok, ok := a.Do(post("/hermes/v1/login", login("client_a"))).JSON()["access_token"].(string)
+	if !ok {
+		t.Fatal("login for the live tool returned no access_token")
+	}
+	for _, mode := range [][]string{{"SMS_PARITY_BEARER=" + tok}, {"SMS_PARITY_BEARER="}} {
 		args := []string{"-baseline-url", a.Base, "-candidate-url", b.Base}
 		if mode[0] == "SMS_PARITY_BEARER=" {
 			args = append(args, "-allow-anon")
@@ -56,6 +59,8 @@ func TestParity(t *testing.T) {
 			t.Errorf("smsgw-parity %v: %v", args, err)
 		}
 	}
+	steps := append(preFlood(profProd.name), floods(profProd)...)
+	outs = append(outs, Run(steps, a, b, KnownDifferences)...)
 
 	// Defaults: restart both with their built-in limits and no trusted proxy.
 	s.stopV3()
