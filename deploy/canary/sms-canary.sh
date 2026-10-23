@@ -6,7 +6,7 @@
 #   sms-canary.sh pin <user> <v3|v4>     pin one API client (username)
 #   sms-canary.sh unpin <user>           remove a pin (client follows percent)
 #   sms-canary.sh reload                 validate, refresh the TLS cert, reload
-#   sms-canary.sh parity [args...]       V3/V4 HTTP differential check (hook)
+#   sms-canary.sh parity [--allow-anon]  read-only V3/V4 HTTP differential check
 #
 # Rollback of everything to V3:   set 0, then pin every V4 client to v3 (or
 # unpin it), e.g.  sms-canary.sh set 0 && sms-canary.sh pin jobsbg v3 ...
@@ -27,7 +27,9 @@
 #                          master; reload signals it directly and validates
 #                          with $SMS_CANARY_DIR/entrypoint.sh check
 #   SMS_CANARY_NO_RELOAD=1 change the files only (e.g. LB not running yet)
-#   SMS_CANARY_PARITY_CMD  command the `parity` hook runs (see below)
+#   SMS_CANARY_PARITY_BIN  smsgw-parity binary       [$SMS_CANARY_DIR/bin/smsgw-parity]
+#   SMS_PARITY_BEARER      bearer token for `parity` (else --allow-anon)
+#   SMS_CANARY_PARITY_CMD  replaces the built-in `parity` command entirely
 set -euo pipefail
 
 DIR=${SMS_CANARY_DIR:-/srv/sms-gw-lb}
@@ -171,17 +173,32 @@ reload)
 	reload
 	;;
 parity)
-	# ------------------------------------------------------------------
-	# HOOK(parity): V3/V4 HTTP differential check. Intentionally NOT
-	# implemented here: it runs the differential harness that lives in this
-	# repository (being built separately, tests/parity or cmd/...). Wire it
-	# by setting SMS_CANARY_PARITY_CMD to the harness invocation, e.g.
-	#   SMS_CANARY_PARITY_CMD='/srv/sms-gw-lb/bin/<harness> --v3 ... --v4 ...'
-	# Arguments after `parity` are passed through.
-	# ------------------------------------------------------------------
-	[[ -n ${SMS_CANARY_PARITY_CMD:-} ]] || die "parity: not wired yet — set SMS_CANARY_PARITY_CMD to the differential harness (see HOOK(parity) in $0)"
-	# shellcheck disable=SC2086 # the command string is operator-provided
-	exec $SMS_CANARY_PARITY_CMD "$@"
+	# V3/V4 HTTP differential check with smsgw-parity (cmd/smsgw-parity,
+	# `make parity-tool`). It is read-only: no sends, logins, receipts or
+	# logouts. It runs in a throwaway container on the LB network, so it reaches
+	# both backends directly, by container name, without going through the LB.
+	# Bearer: SMS_PARITY_BEARER (a token valid on both instances); without one
+	# pass --allow-anon. SMS_CANARY_PARITY_CMD still overrides everything.
+	if [[ -n ${SMS_CANARY_PARITY_CMD:-} ]]; then
+		# shellcheck disable=SC2086 # the command string is operator-provided
+		exec $SMS_CANARY_PARITY_CMD "$@"
+	fi
+	PARITY_BIN=${SMS_CANARY_PARITY_BIN:-$DIR/bin/smsgw-parity}
+	[[ -x $PARITY_BIN ]] || die "parity: $PARITY_BIN not found (build it with \`make parity-tool\` and copy it there)"
+	anon=()
+	for a in "$@"; do
+		case $a in
+		--allow-anon) anon=(-allow-anon) ;;
+		*) die "parity: unknown argument $a" ;;
+		esac
+	done
+	[[ ${#anon[@]} -gt 0 || -n ${SMS_PARITY_BEARER:-} ]] || die "parity: set SMS_PARITY_BEARER or pass --allow-anon"
+	exec docker run --rm --network "${SMS_CANARY_NETWORK:-sms-gw-lb}" \
+		-v "$PARITY_BIN:/smsgw-parity:ro" -e SMS_PARITY_BEARER \
+		docker.io/library/alpine:3.20 /smsgw-parity \
+		-baseline-url "http://${SMS_CANARY_V3:-compose-sms-gw-service-1:9901}" \
+		-candidate-url "http://${SMS_CANARY_V4:-tangra-sms-gw-sms-gw-1:9901}" \
+		"${anon[@]}"
 	;;
 *)
 	usage

@@ -40,7 +40,7 @@ under [Review of the draft](#review-of-the-draft).
 | `maps/pins.map`, `maps/canary.map` | Routing state. The files are the only state. |
 | `entrypoint.sh` | Container entrypoint. Builds the combined PEM from `fullchain.pem` and `privkey.pem`, checks the config, then runs `haproxy -W -db`. `entrypoint.sh prepare` rebuilds and validates the PEM before every reload, so a renewed certificate needs no restart. |
 | `compose.yaml` | Standalone compose project for the LB (`/srv/sms-gw-lb`). |
-| `sms-canary.sh` | Operator script: `status`, `set`, `pin`, `unpin`, `reload`, and the `parity` hook. |
+| `sms-canary.sh` | Operator script: `status`, `set`, `pin`, `unpin`, `reload`, and `parity` (read-only v3/v4 diff). |
 | `test.sh`, `fakebackend/` | Local test. Runs real HAProxy 2.8 against two fake backends. |
 
 ## Architecture
@@ -179,7 +179,7 @@ sms-canary.sh pin homes v4           # pin, then validate + hitless reload
 sms-canary.sh unpin homes            # back to the percent rule
 sms-canary.sh set 10                 # percent of unpinned clients on v4 (warns when lowering)
 sms-canary.sh reload                 # rebuild+validate PEM and config in the container, dump health, SIGUSR2
-sms-canary.sh parity ...             # HOOK: runs $SMS_CANARY_PARITY_CMD (differential harness, wired separately)
+sms-canary.sh parity [--allow-anon]  # read-only v3/v4 diff (smsgw-parity in a container on sms-gw-lb)
 ```
 
 Each change rewrites the map atomically (mktemp next to the file, then `mv`).
@@ -314,6 +314,7 @@ v4, in `/srv/sms-gw-v4/runtime/config.yaml`:
 public:
   trusted_proxies: [10.250.0.10/32]   # the LB, and nothing else
   max_body_bytes: 65536
+  legacy_json_style: compact      # prod v3.0.9 binary is compact (smsgw-parity -json-style; live 401 body confirms)
 public_auth:
   jwt_secret: { file: ... }       # SAME secret as v3's SMS_GW_JWT_SECRET
   access_ttl_seconds: 7200
@@ -455,6 +456,21 @@ Verify:
 7. **v4 portal:** the SMS pages load (the same set) through the gateway.
 8. `/srv/sms-gw-lb/sms-canary.sh status`: percent 0, no pins, both backends
    UP.
+9. **Parity gate (read-only), which must exit 0 before step 4.** Copy the
+   static tool (`make parity-tool`) to `/srv/sms-gw-lb/bin/smsgw-parity`,
+   then run:
+
+   ```
+   /srv/sms-gw-lb/sms-canary.sh parity --allow-anon
+   SMS_PARITY_BEARER=<token> /srv/sms-gw-lb/sms-canary.sh parity
+   ```
+
+   - The tool compares both backends directly over `sms-gw-lb`, without going
+     through the LB.
+   - It never sends, logs in, posts a receipt or logs out.
+   - `<token>` is an access token of an API client that exists on both sides,
+     from a normal `POST /hermes/v1/login`. It is valid on both because the
+     secrets match (step 1).
 
 ### 4. Move homes ⚠ PROD CHANGE
 
