@@ -48,7 +48,11 @@ func (a *App) buildPublic() error {
 	a.SMS = sms.New(sms.Config{Store: a.Repo, Envelope: a.Envelope, Senders: a.Senders, Metrics: a.Metrics, Audit: a.Audit,
 		Log: a.Log.With("component", "sms"), CarrierTimeout: carrierTimeout,
 		Policy: sms.RecipientPolicy{MinDigits: c.Recipients.MinDigits, Allowed: c.Recipients.AllowedPrefixes, Blocked: c.Recipients.BlockedPrefixes}})
-	a.Public = publicapi.New(publicapi.Config{Auth: a.Auth, SMS: a.SMS, Proxy: proxy, MaxBody: c.Public.MaxBodyBytes, Log: a.Log.With("component", "public"),
+	style, err := publicapi.ParseJSONStyle(c.Public.LegacyJSONStyle)
+	if err != nil {
+		return err
+	}
+	a.Public = publicapi.New(publicapi.Config{Auth: a.Auth, Style: style, SMS: a.SMS, Proxy: proxy, MaxBody: c.Public.MaxBodyBytes, Log: a.Log.With("component", "public"),
 		Receipts: a.buildReceipts(proxy),
 		Login:    ratelimit.New(c.RateLimits.LoginPerMinute, c.RateLimits.LoginBurst, 50000),
 		Send:     ratelimit.New(c.RateLimits.SendPerMinute, c.RateLimits.SendBurst, 10000)})

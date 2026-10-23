@@ -6,6 +6,7 @@ package publicapi
 import (
 	"log/slog"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 
@@ -31,7 +32,9 @@ type Config struct {
 	// /hermes/v1/sms/dlr routes; nil acknowledges them without effect.
 	Receipts http.Handler
 	MaxBody  int64
-	Log      *slog.Logger
+	// Style is the legacy build's JSON flavour (public.legacy_json_style).
+	Style JSONStyle
+	Log   *slog.Logger
 }
 
 // Server serves the public Hermes routes.
@@ -49,43 +52,89 @@ func New(c Config) *Server {
 }
 
 // ServeHTTP routes exactly the source routes; anything else, including a
-// known path with another method, is the source "404 page not found".
+// known path with another method, is the source "404 page not found". As
+// the source router (gorilla/mux under Kratos, StrictSlash) did, an unclean
+// path is redirected to its clean form and a route with an extra trailing
+// slash to the route, both 301.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if v := recover(); v != nil {
 			s.c.Log.Error("public handler panic", "path", r.URL.Path)
-			writeJSON(w, 500, object{{"code", 500}, {"reason", "UNKNOWN"}, {"message", "unknown request error"}, {"metadata", object{}}})
+			writeJSON(w, s.c.Style, 500, object{{"code", 500}, {"reason", "UNKNOWN"}, {"message", "unknown request error"}, {"metadata", object{}}})
 		}
 	}()
-	p, get, post := r.URL.Path, r.Method == http.MethodGet, r.Method == http.MethodPost
+	p := r.URL.Path
+	if clean := cleanPath(p); clean != p {
+		u := *r.URL
+		u.Path, u.RawPath = clean, ""
+		w.Header().Set("Location", u.String())
+		w.WriteHeader(http.StatusMovedPermanently)
+		return
+	}
+	if h := s.route(r.Method, p); h != nil {
+		h(w, r)
+		return
+	}
+	if trimmed, ok := strings.CutSuffix(p, "/"); ok && trimmed != "" && s.route(r.Method, trimmed) != nil {
+		u := *r.URL
+		u.Path, u.RawPath = trimmed, ""
+		http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
+		return
+	}
+	http.NotFound(w, r)
+}
+
+// route returns the handler of a source route, or nil.
+func (s *Server) route(method, p string) http.HandlerFunc {
+	get, post := method == http.MethodGet, method == http.MethodPost
 	switch {
 	case p == "/health" && get:
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte("{\"status\":\"ok\"}\n"))
+		return func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{\"status\":\"ok\"}\n"))
+		}
 	case p == "/hermes/v1/login" && post:
-		s.login(w, r)
+		return s.login
 	case p == "/hermes/v1/refresh_token" && post:
-		s.refresh(w, r)
+		return s.refresh
 	case p == "/hermes/v1/logout" && post:
-		s.logout(w, r)
+		return s.logout
 	case p == "/hermes/v1/me" && get:
-		s.me(w, r)
+		return s.me
 	// Literal receipt routes come before the message id patterns.
 	case (p == "/dlr" || p == "/hermes/v1/sms/dlr") && get:
-		s.receipt(w, r)
+		return s.receipt
 	case (p == "/hermes/v1/sms" || p == "/v1/sms") && post:
-		s.send(w, r)
+		return s.send
 	case (p == "/hermes/v1/sms" || p == "/v1/sms") && get:
-		s.list(w, r)
-	default:
-		if id, ok := segment(p, "/hermes/v1/sms/dlr/", "/v1/sms/dlr/"); ok && get {
-			s.receipts(w, r, id)
-		} else if id, ok := segment(p, "/hermes/v1/sms/", "/v1/sms/"); ok && get {
-			s.get(w, r, id)
-		} else {
-			http.NotFound(w, r)
-		}
+		return s.list
 	}
+	if !get {
+		return nil
+	}
+	if id, ok := segment(p, "/hermes/v1/sms/dlr/", "/v1/sms/dlr/"); ok {
+		return func(w http.ResponseWriter, r *http.Request) { s.receipts(w, r, id) }
+	}
+	if id, ok := segment(p, "/hermes/v1/sms/", "/v1/sms/"); ok {
+		return func(w http.ResponseWriter, r *http.Request) { s.get(w, r, id) }
+	}
+	return nil
+}
+
+// cleanPath is the source router's path cleaning: path.Clean keeping a
+// trailing slash, "/" for an empty path.
+func cleanPath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	if p[0] != '/' {
+		p = "/" + p
+	}
+	np := path.Clean(p)
+	if p[len(p)-1] == '/' && np != "/" {
+		np += "/"
+	}
+	return np
 }
 
 // segment returns the single non-empty path segment after one of prefixes.
@@ -99,14 +148,14 @@ func segment(p string, prefixes ...string) (string, bool) {
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	m, err := decodeBody(r, "LoginRequest", s.c.MaxBody)
+	m, err := decodeBody(r, "LoginRequest", s.c.MaxBody, s.c.Style)
 	if err != nil {
-		writeError(w, err)
+		writeError(w, s.c.Style, err)
 		return
 	}
 	ip := s.c.Proxy.ClientIP(r)
 	if !s.c.Login.Allow(ip) {
-		writeError(w, hermes.TooManyRequests("rate limit exceeded for %s", ip))
+		writeError(w, s.c.Style, hermes.TooManyRequests("rate limit exceeded for %s", ip))
 		return
 	}
 	t, err := s.c.Auth.Login(r.Context(), str(m, "username"), str(m, "password"), ip, r.UserAgent())
@@ -114,9 +163,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
-	m, err := decodeBody(r, "RefreshTokenRequest", s.c.MaxBody)
+	m, err := decodeBody(r, "RefreshTokenRequest", s.c.MaxBody, s.c.Style)
 	if err != nil {
-		writeError(w, err)
+		writeError(w, s.c.Style, err)
 		return
 	}
 	t, err := s.c.Auth.Refresh(r.Context(), str(m, "refresh_token"))
@@ -125,25 +174,25 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) tokens(w http.ResponseWriter, t auth.Tokens, err error) {
 	if err != nil {
-		writeError(w, err)
+		writeError(w, s.c.Style, err)
 		return
 	}
-	writeJSON(w, 200, object{{"access_token", t.Access}, {"refresh_token", t.Refresh}, {"token_type", "Bearer"}, {"expires_in", quoted(t.ExpiresIn)}})
+	writeJSON(w, s.c.Style, 200, object{{"access_token", t.Access}, {"refresh_token", t.Refresh}, {"token_type", "Bearer"}, {"expires_in", quoted(t.ExpiresIn)}})
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	if _, err := decodeBody(r, "LogoutRequest", s.c.MaxBody); err != nil {
-		writeError(w, err)
+	if _, err := decodeBody(r, "LogoutRequest", s.c.MaxBody, s.c.Style); err != nil {
+		writeError(w, s.c.Style, err)
 		return
 	}
 	s.c.Auth.Logout(r.Context(), r.Header.Get("Authorization"), r.Header.Get("X-Refresh-Token"))
-	writeJSON(w, 200, object{})
+	writeJSON(w, s.c.Style, 200, object{})
 }
 
 func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (hermes.Caller, bool) {
 	c, err := s.c.Auth.Authenticate(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
-		writeError(w, err)
+		writeError(w, s.c.Style, err)
 		return c, false
 	}
 	return c, true
@@ -158,14 +207,14 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	for _, a := range auth.Abilities(c.Client.Authority) {
 		abilities = append(abilities, object{{"action", a.Action}, {"subject", a.Subject}})
 	}
-	writeJSON(w, 200, object{{"user", object{{"id", uint32(c.Client.ID)}, {"username", c.Client.Username}, {"email", c.Client.Email},
+	writeJSON(w, s.c.Style, 200, object{{"user", object{{"id", uint32(c.Client.ID)}, {"username", c.Client.Username}, {"email", c.Client.Email},
 		{"authority", c.Client.Authority}}}, {"abilities", abilities}})
 }
 
 func (s *Server) send(w http.ResponseWriter, r *http.Request) {
-	m, err := decodeBody(r, "SendSmsRequest", s.c.MaxBody)
+	m, err := decodeBody(r, "SendSmsRequest", s.c.MaxBody, s.c.Style)
 	if err != nil {
-		writeError(w, err)
+		writeError(w, s.c.Style, err)
 		return
 	}
 	c, ok := s.authenticate(w, r)
@@ -173,22 +222,22 @@ func (s *Server) send(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if key := "client:" + strconv.FormatInt(c.Client.ID, 10); !s.c.Send.Allow(key) {
-		writeError(w, hermes.TooManyRequests("rate limit exceeded for %s", key))
+		writeError(w, s.c.Style, hermes.TooManyRequests("rate limit exceeded for %s", key))
 		return
 	}
 	if !c.CanSend() {
-		writeError(w, hermes.Forbidden("sending SMS requires API_CLIENT authority"))
+		writeError(w, s.c.Style, hermes.Forbidden("sending SMS requires API_CLIENT authority"))
 		return
 	}
 	res, err := s.c.SMS.Send(r.Context(), c.Client.TenantID, repo.ClientActor(c.Client.ID), sendRequest(m))
 	if err != nil {
-		writeError(w, err)
+		writeError(w, s.c.Style, err)
 		return
 	}
 	// The source send response does not join the provider and client names.
 	msg := res.Message
 	msg.ProviderName, msg.APIClientUsername = "", ""
-	writeJSON(w, 200, object{{"data", messageJSON(msg)}, {"endpointResponse", carrierJSON(res.Carrier)}})
+	writeJSON(w, s.c.Style, 200, object{{"data", messageJSON(msg)}, {"endpointResponse", carrierJSON(res.Carrier)}})
 }
 
 func sendRequest(m protoreflect.Message) sms.Request {
@@ -214,7 +263,7 @@ func sendRequest(m protoreflect.Message) sms.Request {
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	q, err := decodeQuery(r, "PagingRequest")
 	if err != nil {
-		writeError(w, err)
+		writeError(w, s.c.Style, err)
 		return
 	}
 	c, ok := s.authenticate(w, r)
@@ -223,19 +272,19 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	}
 	view, ok := c.View()
 	if !ok {
-		writeJSON(w, 200, object{{"items", []any{}}, {"total", 0}})
+		writeJSON(w, s.c.Style, 200, object{{"items", []any{}}, {"total", 0}})
 		return
 	}
 	l, err := s.c.SMS.List(r.Context(), view, sms.ParseFilter(str(q, "query")), repo.Page{Page: int(i32(q, "page")), Size: int(i32(q, "page_size"))})
 	if err != nil {
-		writeError(w, err)
+		writeError(w, s.c.Style, err)
 		return
 	}
 	items := make([]any, 0, len(l.Items))
 	for _, m := range l.Items {
 		items = append(items, messageJSON(m))
 	}
-	writeJSON(w, 200, object{{"items", items}, {"total", l.Total}})
+	writeJSON(w, s.c.Style, 200, object{{"items", items}, {"total", l.Total}})
 }
 
 var errNoSMS = hermes.NotFound("sms not found")
@@ -247,15 +296,15 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	view, ok := c.View()
 	if !ok {
-		writeError(w, errNoSMS)
+		writeError(w, s.c.Style, errNoSMS)
 		return
 	}
 	m, err := s.c.SMS.Get(r.Context(), view, id)
 	if err != nil {
-		writeError(w, err)
+		writeError(w, s.c.Style, err)
 		return
 	}
-	writeJSON(w, 200, object{{"data", messageJSON(m)}})
+	writeJSON(w, s.c.Style, 200, object{{"data", messageJSON(m)}})
 }
 
 func (s *Server) receipts(w http.ResponseWriter, r *http.Request, id string) {
@@ -265,19 +314,19 @@ func (s *Server) receipts(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	view, ok := c.View()
 	if !ok {
-		writeError(w, errNoSMS)
+		writeError(w, s.c.Style, errNoSMS)
 		return
 	}
 	l, err := s.c.SMS.Receipts(r.Context(), view, id)
 	if err != nil {
-		writeError(w, err)
+		writeError(w, s.c.Style, err)
 		return
 	}
 	items := make([]any, 0, len(l.Items))
 	for _, d := range l.Items {
 		items = append(items, receiptJSON(d))
 	}
-	writeJSON(w, 200, object{{"items", items}, {"total", l.Total}})
+	writeJSON(w, s.c.Style, 200, object{{"items", items}, {"total", l.Total}})
 }
 
 // receipt is the reserved carrier receipt route: always the source
@@ -291,7 +340,7 @@ func (s *Server) receipt(w http.ResponseWriter, r *http.Request) {
 }
 
 // WriteReceiptAck writes the source receipt acknowledgement.
-func WriteReceiptAck(w http.ResponseWriter) { writeJSON(w, 200, "DLR_OK") }
+func WriteReceiptAck(w http.ResponseWriter) { writeJSON(w, StyleSpaced, 200, "DLR_OK") }
 
 // messageJSON is the source Message: the legacy mapper never filled sms,
 // raw evidence or providerId, and the status is the unsigned code.
