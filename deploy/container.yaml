@@ -29,6 +29,10 @@ public:
   https_addr: 127.0.0.1:9902
   trusted_proxies: []
   max_body_bytes: 65536
+  # JSON flavour of the legacy build being replaced (protobuf-go chose it per
+  # binary): spaced (", " between members) or compact (","). Print it with
+  # `smsgw-parity -json-style <legacy binary>`; see docs/compatibility.md.
+  legacy_json_style: spaced
 public_auth:
   jwt_secret: { file: /secrets/jwt.key }
   access_ttl_seconds: 7200

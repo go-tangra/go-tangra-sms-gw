@@ -103,21 +103,81 @@ func newMessage(name string) *dynamicpb.Message {
 	return dynamicpb.NewMessage(descriptors.Messages().ByName(protoreflect.Name(name)))
 }
 
-// protoError renders a protobuf-go error with the source's "proto:" prefix
-// (protobuf-go randomizes the separator per build; the source build used a
-// no-break space).
-func protoError(err error) string {
+// JSONStyle is the protobuf-go output flavour of the legacy build V4
+// replaces. protobuf-go picks it per binary (internal/detrand: a hash of the
+// executable), so two builds of the same legacy source can differ: either
+// ", " between JSON members and "proto:\u00a0" in decode errors (spaced), or
+// "," and "proto: " (compact). JSON clients see no difference; the style
+// makes the bytes identical to the legacy build in production.
+type JSONStyle int
+
+const (
+	// StyleSpaced is the flavour of the build the runtime fixtures were
+	// recorded from.
+	StyleSpaced JSONStyle = iota
+	// StyleCompact is the other flavour (e.g. the local v3.0.9 build).
+	StyleCompact
+)
+
+// ParseJSONStyle parses "spaced" or "compact" ("" is spaced).
+func ParseJSONStyle(s string) (JSONStyle, error) {
+	switch s {
+	case "", "spaced":
+		return StyleSpaced, nil
+	case "compact":
+		return StyleCompact, nil
+	}
+	return 0, fmt.Errorf("publicapi: unknown legacy JSON style %q (spaced or compact)", s)
+}
+
+func (st JSONStyle) sep() string {
+	if st == StyleCompact {
+		return ","
+	}
+	return ", "
+}
+
+// protoError renders a protobuf-go error with the legacy build's "proto:"
+// separator (no-break space when spaced, space when compact).
+func (st JSONStyle) protoError(err error) string {
 	msg := err.Error()
 	if rest, ok := strings.CutPrefix(msg, "proto:"); ok {
-		return "proto: " + strings.TrimLeft(rest, "  ")
+		sep := "\u00a0"
+		if st == StyleCompact {
+			sep = " "
+		}
+		return "proto:" + sep + strings.TrimLeft(rest, " \u00a0")
 	}
 	return msg
 }
 
-// decodeBody decodes a request body by its content type (form or JSON,
-// JSON being the default); an empty body leaves the message empty.
-func decodeBody(r *http.Request, name string, limit int64) (*dynamicpb.Message, error) {
+// legacyCodecs are the request codecs registered in the legacy Kratos
+// build, by Content-Type subtype.
+var legacyCodecs = map[string]bool{"json": true, "x-www-form-urlencoded": true, "proto": true, "xml": true, "yaml": true}
+
+// requestCodec selects the codec as the legacy Kratos decoder did: the
+// first Content-Type header value whose subtype is registered.
+func requestCodec(r *http.Request) (string, bool) {
+	for _, v := range r.Header.Values("Content-Type") {
+		if sub := contentSubtype(v); legacyCodecs[sub] {
+			return sub, true
+		}
+	}
+	return "", false
+}
+
+// decodeBody decodes a request body by its content type, as the legacy
+// Kratos decoder did: a missing or unregistered Content-Type is refused
+// before the body is read (even an empty one); an empty body leaves the
+// message empty. Form bodies use the form codec; every other registered
+// codec decodes as JSON (the legacy xml, yaml and proto codecs have no
+// client and are not reproduced).
+func decodeBody(r *http.Request, name string, limit int64, st JSONStyle) (*dynamicpb.Message, error) {
 	m := newMessage(name)
+	codec, ok := requestCodec(r)
+	if !ok {
+		return nil, hermes.Codec("unregister Content-Type: %s", r.Header.Get("Content-Type"))
+	}
 	body, err := readBody(r, limit)
 	if err != nil {
 		return nil, err
@@ -125,15 +185,18 @@ func decodeBody(r *http.Request, name string, limit int64) (*dynamicpb.Message, 
 	if len(body) == 0 {
 		return m, nil
 	}
-	if contentSubtype(r.Header.Get("Content-Type")) == "x-www-form-urlencoded" {
+	if codec == "x-www-form-urlencoded" {
 		vs, err := url.ParseQuery(string(body))
 		if err != nil {
 			return nil, hermes.Codec("body unmarshal %s", err.Error())
 		}
-		return m, decodeValues(m, vs)
+		if err := decodeValues(m, vs); err != nil {
+			return nil, hermes.Codec("body unmarshal %s", err.Error())
+		}
+		return m, nil
 	}
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(body, m); err != nil {
-		return nil, hermes.Codec("body unmarshal %s", protoError(err))
+		return nil, hermes.Codec("body unmarshal %s", st.protoError(err))
 	}
 	return m, nil
 }
@@ -150,89 +213,175 @@ func readBody(r *http.Request, limit int64) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// contentSubtype is the legacy (Kratos httputil) subtype: the text between
+// the first "/" and the first ";", neither trimmed nor case-folded.
 func contentSubtype(ct string) string {
-	ct, _, _ = strings.Cut(ct, ";")
-	_, sub, ok := strings.Cut(strings.TrimSpace(ct), "/")
-	if !ok {
+	left := strings.Index(ct, "/")
+	if left == -1 {
 		return ""
 	}
-	return strings.ToLower(sub)
+	right := strings.Index(ct, ";")
+	if right == -1 {
+		right = len(ct)
+	}
+	if right < left {
+		return ""
+	}
+	return ct[left+1 : right]
 }
 
 // decodeQuery binds a query string as the source BindQuery did.
 func decodeQuery(r *http.Request, name string) (*dynamicpb.Message, error) {
 	m := newMessage(name)
-	return m, decodeValues(m, r.URL.Query())
+	if err := decodeValues(m, r.URL.Query()); err != nil {
+		return nil, hermes.Codec("%s", err.Error())
+	}
+	return m, nil
 }
 
-// decodeValues is the source form codec for flat scalar fields: a key
-// names a field by JSON or proto name, unknown keys are ignored.
-func decodeValues(m *dynamicpb.Message, vs url.Values) error {
-	fields := m.Descriptor().Fields()
+// decodeValues is the source (Kratos encoding/form) proto binding of form
+// bodies and query strings: a key is a "."-separated path of proto or JSON
+// field names into message fields; map entries are "field[key]" or
+// "field.key"; unknown keys are ignored and empty scalar values skipped.
+func decodeValues(m protoreflect.Message, vs url.Values) error {
 	for key, values := range vs {
-		fd := fields.ByJSONName(key)
-		if fd == nil {
-			fd = fields.ByName(protoreflect.Name(key))
-		}
-		if fd == nil || fd.Kind() == protoreflect.MessageKind || fd.IsMap() {
-			continue
-		}
-		if fd.IsList() {
-			list := m.Mutable(fd).List()
-			for _, v := range values {
-				pv, err := scalar(fd, v)
-				if err != nil {
-					return err
-				}
-				list.Append(pv)
-			}
-			continue
-		}
-		if len(values) != 1 {
-			return hermes.Codec("too many values for field %q: %s", fd.Name(), strings.Join(values, ", "))
-		}
-		pv, err := scalar(fd, values[0])
-		if err != nil {
+		if err := populate(m, strings.Split(key, "."), values); err != nil {
 			return err
 		}
-		m.Set(fd, pv)
 	}
 	return nil
 }
 
-func scalar(fd protoreflect.FieldDescriptor, v string) (protoreflect.Value, error) {
-	fail := func(err error) (protoreflect.Value, error) {
-		return protoreflect.Value{}, hermes.Codec("parsing field %q: %s", fd.Name(), err.Error())
+func populate(v protoreflect.Message, path []string, values []string) error {
+	if len(values) < 1 {
+		return errors.New("no value provided")
 	}
+	var fd protoreflect.FieldDescriptor
+	for i, name := range path {
+		if fd = formField(v, name); fd == nil {
+			return nil // unknown fields are ignored
+		}
+		if fd.IsMap() && len(path) == 2 {
+			return populateMap(fd, v.Mutable(fd).Map(), strings.Join(path, "."), values)
+		}
+		if i == len(path)-1 {
+			break
+		}
+		if fd.Message() == nil || fd.Cardinality() == protoreflect.Repeated {
+			if fd.IsMap() && len(path) > 1 {
+				return populateMap(fd, v.Mutable(fd).Map(), path[1], values)
+			}
+			return fmt.Errorf("invalid path: %q is not a message", name)
+		}
+		v = v.Mutable(fd).Message()
+	}
+	switch {
+	case fd.IsList():
+		list := v.Mutable(fd).List()
+		for _, value := range values {
+			pv, err := formScalar(fd, value)
+			if err != nil {
+				return fmt.Errorf("parsing list %q: %w", fd.FullName().Name(), err)
+			}
+			list.Append(pv)
+		}
+		return nil
+	case fd.IsMap():
+		return populateMap(fd, v.Mutable(fd).Map(), strings.Join(path, "."), values)
+	}
+	if len(values) > 1 {
+		return fmt.Errorf("too many values for field %q: %s", fd.FullName().Name(), strings.Join(values, ", "))
+	}
+	if values[0] == "" {
+		return nil
+	}
+	pv, err := formScalar(fd, values[0])
+	if err != nil {
+		return fmt.Errorf("parsing field %q: %w", fd.FullName().Name(), err)
+	}
+	v.Set(fd, pv)
+	return nil
+}
+
+func formField(v protoreflect.Message, name string) protoreflect.FieldDescriptor {
+	fields := v.Descriptor().Fields()
+	byName := func(n string) protoreflect.FieldDescriptor {
+		if fd := fields.ByName(protoreflect.Name(n)); fd != nil {
+			return fd
+		}
+		return fields.ByJSONName(n)
+	}
+	if fd := byName(name); fd != nil {
+		return fd
+	}
+	if len(name) > 2 && strings.HasSuffix(name, "[]") {
+		return byName(strings.TrimSuffix(name, "[]"))
+	}
+	if f, _, err := mapKey(name); err == nil {
+		return byName(f)
+	}
+	return nil
+}
+
+var errMapKey = errors.New("invalid formatting for map key")
+
+// mapKey splits "map[key]" or "map.key" into the field and the key.
+func mapKey(key string) (string, string, error) {
+	start, end := strings.IndexByte(key, '['), strings.IndexByte(key, ']')
+	if start < 0 {
+		if strings.Count(key, ".") != 1 {
+			return "", "", errMapKey
+		}
+		m, k, _ := strings.Cut(key, ".")
+		if m == "" {
+			return "", "", errMapKey
+		}
+		return m, k, nil
+	}
+	if start <= 0 || start >= end || len(key) != end+1 {
+		return "", "", errMapKey
+	}
+	return key[:start], key[start+1 : end], nil
+}
+
+func populateMap(fd protoreflect.FieldDescriptor, mp protoreflect.Map, key string, values []string) error {
+	_, name, err := mapKey(key)
+	if err != nil {
+		return err
+	}
+	k, err := formScalar(fd.MapKey(), name)
+	if err != nil {
+		return fmt.Errorf("parsing map key %q: %w", fd.FullName().Name(), err)
+	}
+	val, err := formScalar(fd.MapValue(), values[len(values)-1])
+	if err != nil {
+		return fmt.Errorf("parsing map value %q: %w", fd.FullName().Name(), err)
+	}
+	mp.Set(k.MapKey(), val)
+	return nil
+}
+
+// formScalar parses one value of the kinds the legacy messages use.
+func formScalar(fd protoreflect.FieldDescriptor, v string) (protoreflect.Value, error) {
 	switch fd.Kind() {
 	case protoreflect.StringKind:
 		return protoreflect.ValueOfString(v), nil
 	case protoreflect.BoolKind:
 		b, err := strconv.ParseBool(v)
-		if err != nil {
-			return fail(err)
-		}
-		return protoreflect.ValueOfBool(b), nil
+		return protoreflect.ValueOfBool(b), err
 	case protoreflect.Int32Kind:
 		n, err := strconv.ParseInt(v, 10, 32)
-		if err != nil {
-			return fail(err)
-		}
-		return protoreflect.ValueOfInt32(int32(n)), nil
+		return protoreflect.ValueOfInt32(int32(n)), err
 	case protoreflect.Uint32Kind:
 		n, err := strconv.ParseUint(v, 10, 32)
-		if err != nil {
-			return fail(err)
-		}
-		return protoreflect.ValueOfUint32(uint32(n)), nil
+		return protoreflect.ValueOfUint32(uint32(n)), err
 	case protoreflect.Uint64Kind:
 		n, err := strconv.ParseUint(v, 10, 64)
-		if err != nil {
-			return fail(err)
-		}
-		return protoreflect.ValueOfUint64(n), nil
+		return protoreflect.ValueOfUint64(n), err
+	case protoreflect.MessageKind:
+		return protoreflect.Value{}, fmt.Errorf("unsupported message type: %q", string(fd.Message().FullName()))
 	}
-	return protoreflect.Value{}, hermes.Codec("unsupported field %q", fd.Name())
+	return protoreflect.Value{}, fmt.Errorf("unsupported field kind: %v", fd.Kind())
 }
 
 func field(m protoreflect.Message, name string) protoreflect.FieldDescriptor {
@@ -251,7 +400,7 @@ func sub(m protoreflect.Message, name string) protoreflect.Message {
 // ---------- response encoding ----------
 //
 // Responses reproduce the source protojson output exactly: declaration
-// field order, every field emitted, `", "` between members, no HTML
+// field order, every field emitted, the build's member separator (JSONStyle), no HTML
 // escaping, 64-bit integers as strings and RFC 3339 UTC timestamps.
 
 type member struct {
@@ -266,7 +415,7 @@ type quotedU uint64 // uint64 as a JSON string
 
 type timestamp time.Time
 
-func encode(b *bytes.Buffer, v any) {
+func encode(b *bytes.Buffer, v any, st JSONStyle) {
 	switch x := v.(type) {
 	case nil:
 		b.WriteString("null")
@@ -274,20 +423,20 @@ func encode(b *bytes.Buffer, v any) {
 		b.WriteByte('{')
 		for i, m := range x {
 			if i > 0 {
-				b.WriteString(", ")
+				b.WriteString(st.sep())
 			}
 			writeString(b, m.key)
 			b.WriteByte(':')
-			encode(b, m.val)
+			encode(b, m.val, st)
 		}
 		b.WriteByte('}')
 	case []any:
 		b.WriteByte('[')
 		for i, e := range x {
 			if i > 0 {
-				b.WriteString(", ")
+				b.WriteString(st.sep())
 			}
-			encode(b, e)
+			encode(b, e, st)
 		}
 		b.WriteByte(']')
 	case string:
@@ -360,16 +509,16 @@ func writeString(b *bytes.Buffer, s string) {
 	b.WriteByte('"')
 }
 
-func writeJSON(w http.ResponseWriter, code int, v any) {
+func writeJSON(w http.ResponseWriter, st JSONStyle, code int, v any) {
 	var b bytes.Buffer
-	encode(&b, v)
+	encode(&b, v, st)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_, _ = w.Write(b.Bytes())
 }
 
 // writeError writes the source error envelope.
-func writeError(w http.ResponseWriter, err error) {
+func writeError(w http.ResponseWriter, st JSONStyle, err error) {
 	e := hermes.From(err)
-	writeJSON(w, e.Code, object{{"code", e.Code}, {"reason", e.Reason}, {"message", e.Message}, {"metadata", object{}}})
+	writeJSON(w, st, e.Code, object{{"code", e.Code}, {"reason", e.Reason}, {"message", e.Message}, {"metadata", object{}}})
 }

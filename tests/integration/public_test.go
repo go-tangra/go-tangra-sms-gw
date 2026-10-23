@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,11 @@ import (
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/app/apptest"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/config"
 	"github.com/go-tangra/go-tangra-sms-gw/v4/internal/repo"
+)
+
+var (
+	uuidV7 = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	uuidV4 = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 )
 
 type hermes struct {
@@ -92,6 +98,11 @@ func TestPublicAcceptance(t *testing.T) {
 	for i, id := range ids {
 		if codes[i] != 200 || id == "" || seen[id] {
 			t.Fatalf("send %d: %d %q", i, codes[i], id)
+		}
+		// New message ids (the carrier request_id) are UUIDv7: the canary
+		// load balancer routes receipts and id paths by the version nibble.
+		if !uuidV7.MatchString(id) {
+			t.Fatalf("send %d: id %q is not a version 7 UUID", i, id)
 		}
 		seen[id] = true
 	}
@@ -175,6 +186,20 @@ func TestPublicAcceptance(t *testing.T) {
 	}
 	if _, out := h.do("GET", "/hermes/v1/sms/dlr/"+MessageA, a, ""); out["total"] != float64(1) {
 		t.Fatalf("receipts %v", out)
+	}
+	// MessageA has a version 4 id, like every message imported from v3: its
+	// receipts are still accepted and its reads still work.
+	if !uuidV4.MatchString(MessageA) {
+		t.Fatal("MessageA should carry a version 4 id")
+	}
+	for _, path := range []string{"/dlr", "/hermes/v1/sms/dlr"} {
+		q := "?channel=sms&sid=9999&message_status=1&to=359888000100&timestamp=1700000000&dlr_token=" + DLRTokens[ProviderA] + "&request_id=" + MessageA
+		if code, _ := h.do("GET", path+q, "", ""); code != 200 {
+			t.Fatalf("receipt for an imported id on %s: %d", path, code)
+		}
+	}
+	if _, out := h.do("GET", "/hermes/v1/sms/dlr/"+MessageA, a, ""); out["total"] != float64(2) {
+		t.Fatalf("receipt for an imported (version 4) id was not stored: %v", out)
 	}
 	for _, c := range []struct {
 		token string

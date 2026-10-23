@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -151,7 +152,16 @@ func (f *fixture) do(method, path, body string, headers ...string) response {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.RemoteAddr = "192.0.2.10:5000"
 	for i := 0; i+1 < len(headers); i += 2 {
-		req.Header.Set(headers[i], headers[i+1])
+		if headers[i+1] != "" {
+			req.Header.Set(headers[i], headers[i+1])
+		}
+	}
+	// Clients send a JSON content type; "-" in a header value removes it.
+	if method == "POST" && req.Header.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if req.Header.Get("Content-Type") == "-" {
+		req.Header.Del("Content-Type")
 	}
 	w := httptest.NewRecorder()
 	f.srv.ServeHTTP(w, req)
@@ -190,8 +200,9 @@ func TestRouting(t *testing.T) {
 		{"HEAD", "/hermes/v1/me", notFound},
 		{"GET", "/hermes/v1/unknown", notFound},
 		{"GET", "/hermes/v1/sms/a/b", notFound},
-		{"GET", "/hermes/v1/sms/", notFound},
-		{"GET", "/v1/sms/dlr/", notFound},
+		{"GET", "/v1/login/", notFound},
+		{"GET", "/hermes/v1/login/", notFound}, // a trailing slash redirects only for the route's method
+		{"HEAD", "/health/", notFound},
 		{"GET", "/v1/login", notFound},
 		{"GET", "/metrics", notFound},
 		{"GET", "/", notFound},
@@ -202,6 +213,31 @@ func TestRouting(t *testing.T) {
 	} {
 		if got := f.do(c.method, c.path, ""); got != c.want {
 			t.Fatalf("%s %s: %+v", c.method, c.path, got)
+		}
+	}
+}
+
+// TestSourceRedirects: the source router redirected unclean paths (any
+// method, no body) and routes with a trailing slash (http.Redirect), 301.
+func TestSourceRedirects(t *testing.T) {
+	f := newFixture(t, 20)
+	for _, c := range []struct {
+		method, path, location, ctype, body string
+	}{
+		{"GET", "/hermes/v1/sms/", "/hermes/v1/sms", "text/html; charset=utf-8", "<a href=\"/hermes/v1/sms\">Moved Permanently</a>.\n\n"},
+		{"GET", "/v1/sms/dlr/", "/v1/sms/dlr", "text/html; charset=utf-8", "<a href=\"/v1/sms/dlr\">Moved Permanently</a>.\n\n"},
+		{"GET", "/health/?x=1", "/health?x=1", "text/html; charset=utf-8", "<a href=\"/health?x=1\">Moved Permanently</a>.\n\n"},
+		{"GET", "/hermes/v1/sms/dlr/", "/hermes/v1/sms/dlr", "text/html; charset=utf-8", "<a href=\"/hermes/v1/sms/dlr\">Moved Permanently</a>.\n\n"},
+		{"POST", "/hermes/v1/login/", "/hermes/v1/login", "", ""},
+		{"POST", "//hermes/v1/login", "/hermes/v1/login", "", ""},
+		{"GET", "/hermes/v1/x/../me?a=b", "/hermes/v1/me?a=b", "", ""},
+		{"DELETE", "/nope//x/", "/nope/x/", "", ""},
+	} {
+		req := httptest.NewRequest(c.method, c.path, nil)
+		w := httptest.NewRecorder()
+		f.srv.ServeHTTP(w, req)
+		if w.Code != 301 || w.Header().Get("Location") != c.location || w.Header().Get("Content-Type") != c.ctype || w.Body.String() != c.body {
+			t.Fatalf("%s %s: %d %q %q %q", c.method, c.path, w.Code, w.Header().Get("Location"), w.Header().Get("Content-Type"), w.Body.String())
 		}
 	}
 }
@@ -223,6 +259,14 @@ func TestDecodeErrorsKeepSourceText(t *testing.T) {
 		{"GET", "/hermes/v1/sms?nopaging=maybe", "", "", a, errBody(400, "CODEC", `parsing field \"no_paging\": strconv.ParseBool: parsing \"maybe\": invalid syntax`), 400},
 		{"GET", "/hermes/v1/sms?page=1&page=2", "", "", a, errBody(400, "CODEC", `too many values for field \"page\": 1, 2`), 400},
 		{"POST", "/hermes/v1/login", strings.Repeat(" ", 2048), "", "", errBody(400, "BAD_REQUEST", "request body too large"), 400},
+		// The legacy Kratos decoder refuses a missing or unregistered content
+		// type before reading the body, even an empty one.
+		{"POST", "/hermes/v1/login", `{"username":"client_a"}`, "-", "", errBody(400, "CODEC", "unregister Content-Type: "), 400},
+		{"POST", "/hermes/v1/logout", "", "-", "", errBody(400, "CODEC", "unregister Content-Type: "), 400},
+		{"POST", "/hermes/v1/refresh_token", "{}", "text/plain", "", errBody(400, "CODEC", "unregister Content-Type: text/plain"), 400},
+		{"POST", "/hermes/v1/sms", "{}", "application/JSON", a, errBody(400, "CODEC", "unregister Content-Type: application/JSON"), 400},
+		{"POST", "/hermes/v1/sms", "{}", "application/json ;charset=utf-8", a, errBody(400, "CODEC", "unregister Content-Type: application/json ;charset=utf-8"), 400},
+		{"POST", "/hermes/v1/login", "", "application/json; charset=utf-8", "", errBody(400, "BAD_REQUEST", "username and password are required"), 400},
 	} {
 		r := f.do(c.method, c.path, c.body, "Content-Type", c.ctype, "Authorization", c.token)
 		if r.code != c.code || r.body != c.want {
@@ -314,10 +358,23 @@ func TestSendAndRead(t *testing.T) {
 func TestEncoding(t *testing.T) {
 	var b bytes.Buffer
 	encode(&b, object{{"s", "a\"b\\c\n\t\x01<>&é😀"}, {"n", nil}, {"q", quotedU(18446744073709551615)}, {"i", quoted(-5)},
-		{"u", uint32(4294967295)}, {"l", []any{}}, {"o", object{}}, {"t", timestamp(time.Date(2026, 1, 2, 3, 4, 5, 1, time.FixedZone("x", 3600)))}})
+		{"u", uint32(4294967295)}, {"l", []any{}}, {"o", object{}}, {"t", timestamp(time.Date(2026, 1, 2, 3, 4, 5, 1, time.FixedZone("x", 3600)))}}, StyleSpaced)
 	want := `{"s":"a\"b\\c\n\t\u0001<>&é😀", "n":null, "q":"18446744073709551615", "i":"-5", "u":4294967295, "l":[], "o":{}, "t":"2026-01-02T02:04:05.000000001Z"}`
 	if b.String() != want {
 		t.Fatalf("\n got  %s\n want %s", b.String(), want)
+	}
+	b.Reset()
+	encode(&b, object{{"a", []any{1, 2}}, {"b", object{{"c", "d, e"}}}}, StyleCompact)
+	if want := `{"a":[1,2],"b":{"c":"d, e"}}`; b.String() != want {
+		t.Fatalf("compact\n got  %s\n want %s", b.String(), want)
+	}
+	perr := errors.New("proto:\u00a0syntax error")
+	if StyleSpaced.protoError(perr) != "proto:\u00a0syntax error" || StyleCompact.protoError(perr) != "proto: syntax error" ||
+		StyleSpaced.protoError(errors.New("proto: x")) != "proto:\u00a0x" {
+		t.Fatal("proto error separator")
+	}
+	if _, err := ParseJSONStyle("pretty"); err == nil {
+		t.Fatal("unknown style accepted")
 	}
 	// The source unsigned status: the initial -1 is 4294967295 on the wire.
 	if !strings.Contains(string(mustJSON(messageJSON(repo.Message{StatusCode: -1, Recipient: "1"}))), `"status":4294967295`) {
@@ -331,6 +388,6 @@ func TestEncoding(t *testing.T) {
 
 func mustJSON(v any) []byte {
 	var b bytes.Buffer
-	encode(&b, v)
+	encode(&b, v, StyleSpaced)
 	return b.Bytes()
 }

@@ -77,6 +77,10 @@ type Public struct {
 	TLSKeyFile     string   `yaml:"tls_key_file"`
 	TrustedProxies []string `yaml:"trusted_proxies"`
 	MaxBodyBytes   int64    `yaml:"max_body_bytes"`
+	// LegacyJSONStyle is the JSON flavour of the legacy build being
+	// replaced: "spaced" (", " between members, the default) or "compact"
+	// (","). protobuf-go chose it per legacy binary; see docs/compatibility.md.
+	LegacyJSONStyle string `yaml:"legacy_json_style"`
 }
 
 // TLSEnabled reports a static public certificate.

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestViews(t *testing.T) {
@@ -39,6 +41,17 @@ func TestInvalidScopesNeverReachTheDatabase(t *testing.T) {
 func TestHelpers(t *testing.T) {
 	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(NewID()) {
 		t.Fatal("not a v4 uuid")
+	}
+	v7 := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	if id := NewMessageID(); !v7.MatchString(id) {
+		t.Fatalf("message id %q is not a v7 uuid", id)
+	}
+	at := time.UnixMilli(0x0193_4567_89ab)
+	if id := newV7(at); !strings.HasPrefix(id, "01934567-89ab-7") || !v7.MatchString(id) {
+		t.Fatalf("v7 timestamp layout: %q", id)
+	}
+	if a, b := newV7(at), newV7(at); a == b {
+		t.Fatal("v7 ids of the same millisecond collide")
 	}
 	if likeEscape(`50%_\`) != `50\%\_\\` {
 		t.Fatal(likeEscape(`50%_\`))

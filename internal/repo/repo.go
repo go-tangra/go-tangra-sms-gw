@@ -388,11 +388,36 @@ type Repository interface {
 	InTenant(ctx context.Context, tenant string, fn func(*Tx) error) error
 }
 
-// NewID returns a random (version 4) UUID.
+// NewID returns a random (version 4) UUID, for records other than messages.
 func NewID() string {
 	var b [16]byte
 	_, _ = rand.Read(b[:])
 	b[6] = b[6]&0x0f | 0x40
 	b[8] = b[8]&0x3f | 0x80
+	return formatUUID(b)
+}
+
+// NewMessageID returns a version 7 UUID (RFC 9562: 48-bit Unix millisecond
+// timestamp, then random bits) for a new message. The message id is the
+// carrier request_id and travels back in every receipt; during the v3 -> v4
+// canary the load balancer routes receipts and message-id paths by the UUID
+// version nibble (7 -> v4, anything else -> v3, whose ids are version 4).
+// Ids imported from v3 keep their version and stay valid everywhere: nothing
+// in v4 interprets an id beyond its UUID syntax.
+func NewMessageID() string { return newV7(time.Now()) }
+
+func newV7(now time.Time) string {
+	var b [16]byte
+	_, _ = rand.Read(b[6:])
+	ms := uint64(now.UnixMilli()) // #nosec G115 -- post-1970 clock
+	for i := 0; i < 6; i++ {
+		b[i] = byte(ms >> (40 - 8*i))
+	}
+	b[6] = b[6]&0x0f | 0x70
+	b[8] = b[8]&0x3f | 0x80
+	return formatUUID(b)
+}
+
+func formatUUID(b [16]byte) string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
