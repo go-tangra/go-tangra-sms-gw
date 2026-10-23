@@ -46,8 +46,10 @@ services:
       - ./maps:/usr/local/etc/haproxy/maps:ro
       # Admin socket + server-state file, read/written by sms-canary.sh.
       - ./run:/var/run/sms-canary
-      # Directory mount, so certificate renewals (file replacement) are seen.
-      - /root/.docker/compose/ssl:/ssl:ro
+      # The LB's own copy of the Let's Encrypt cert (dir 0700, key 0600, root),
+      # written by the certbot deploy hook. Directory mount, so renewals (file
+      # replacement) are seen.
+      - ./ssl:/ssl:ro
     tmpfs:
       - /run/canary-tls:mode=0700
     networks:
